@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal enabledelayedexpansion
 title General Harness - Restart
 cd /d "%~dp0"
@@ -13,11 +13,8 @@ if /i "%~1"=="server" set MODE=server
 
 rem ---- Load user-level env vars from registry (guarantees engine gets them) ----
 for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v DEEPSEEK_API_KEY 2^>nul') do set "DEEPSEEK_API_KEY=%%a"
-)
 for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTPS_PROXY 2^>nul') do set "HTTPS_PROXY=%%a"
-)
 for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTP_PROXY 2^>nul') do set "HTTP_PROXY=%%a"
-)
 
 echo =============================================
 echo   General Harness - One-click Restart

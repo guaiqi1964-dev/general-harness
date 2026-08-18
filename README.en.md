@@ -63,7 +63,7 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-Setup-v0.1.107.exe`, double-click and follow the wizard:
+Download `General-Harness-Setup-v0.1.108.exe`, double-click and follow the wizard:
 
 - Custom installation location (default: `%ProgramFiles%\General Harness`);
 - The installer bundles everything needed (engine binary, config, GUI, sample models);
@@ -72,18 +72,18 @@ Download `General-Harness-Setup-v0.1.107.exe`, double-click and follow the wizar
 
 ### Option 2: Portable ZIP
 
-Download `General-Harness-v0.1.107.zip` and extract it to any directory — no installation needed. The engine is a single zero-dependency file; double-click `start.bat` or run `bin\gh_upx.exe` directly.
+Download `General-Harness-v0.1.108.zip` and extract it to any directory — no installation needed. The engine is a single zero-dependency file; double-click `start.bat` or run `bin\gh_upx.exe` directly.
 
 ### One-Click Scripts
 
 Both the installer and the ZIP bundle three management scripts. Double-click to use:
 
 ```bat
-start.bat              :: One-click start, enter terminal CLI
-start.bat gui          :: One-click start, open Webview GUI
+start.bat              :: One-click start, open Webview GUI
+start.bat cli          :: One-click start, enter terminal CLI
 start.bat server       :: One-click start, HTTP server only
-restart.bat            :: One-click restart (stops old process, starts new one)
-restart.bat gui        :: One-click restart and open GUI
+restart.bat            :: One-click restart and open GUI
+restart.bat cli        :: One-click restart, enter CLI
 stop.bat               :: One-click stop the engine
 ```
 

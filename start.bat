@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal enabledelayedexpansion
 title General Harness - Start
 cd /d "%~dp0"
@@ -20,9 +20,7 @@ rem ---- Load user-level env vars from registry (fresh windows inherit them,
 rem       but stale windows don't; this guarantees the engine always gets them) ----
 for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v DEEPSEEK_API_KEY 2^>nul') do set "DEEPSEEK_API_KEY=%%a"
 for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTPS_PROXY 2^>nul') do set "HTTPS_PROXY=%%a"
-)
 for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTP_PROXY 2^>nul') do set "HTTP_PROXY=%%a"
-)
 
 echo =============================================
 echo   General Harness - One-click Start

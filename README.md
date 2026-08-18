@@ -64,7 +64,7 @@
 
 ### 方式一：Windows 安装包
 
-下载 `General-Harness-Setup-v0.1.107.exe`，双击运行并按向导操作：
+下载 `General-Harness-Setup-v0.1.108.exe`，双击运行并按向导操作：
 
 - 可选择自定义安装位置（默认 `%ProgramFiles%\General Harness`）；
 - 安装包内置全部运行所需文件（引擎二进制、配置、GUI、示例模型）；
@@ -73,18 +73,18 @@
 
 ### 方式二：绿色压缩包
 
-下载 `General-Harness-v0.1.107.zip`，解压到任意目录即可使用，无需安装。引擎为单文件零依赖，直接双击 `start.bat` 或运行 `bin\gh_upx.exe` 即可。
+下载 `General-Harness-v0.1.108.zip`，解压到任意目录即可使用，无需安装。引擎为单文件零依赖，直接双击 `start.bat` 或运行 `bin\gh_upx.exe` 即可。
 
 ### 一键启动脚本
 
 安装包与压缩包内均附带三个管理脚本，双击即可使用：
 
 ```bat
-start.bat              :: 一键启动，进入终端 CLI
-start.bat gui          :: 一键启动，打开 Webview GUI
+start.bat              :: 一键启动，打开 Webview GUI
+start.bat cli          :: 一键启动，进入终端 CLI
 start.bat server       :: 一键启动，仅运行 HTTP 服务
-restart.bat            :: 一键重启引擎（自动停止旧进程并启动新进程）
-restart.bat gui        :: 一键重启并打开 GUI
+restart.bat            :: 一键重启并打开 GUI
+restart.bat cli        :: 一键重启进入 CLI
 stop.bat               :: 一键停止引擎
 ```
 
