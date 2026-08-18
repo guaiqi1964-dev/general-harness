@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 setlocal enabledelayedexpansion
 title General Harness - Start
 cd /d "%~dp0"
@@ -16,11 +16,20 @@ set MODE=gui
 if /i "%~1"=="cli"    set MODE=cli
 if /i "%~1"=="server" set MODE=server
 
+rem ---- Load user-level env vars from registry (fresh windows inherit them,
+rem       but stale windows don't; this guarantees the engine always gets them) ----
+for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v DEEPSEEK_API_KEY 2^>nul') do set "DEEPSEEK_API_KEY=%%a"
+for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTPS_PROXY 2^>nul') do set "HTTPS_PROXY=%%a"
+)
+for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTP_PROXY 2^>nul') do set "HTTP_PROXY=%%a"
+)
+
 echo =============================================
 echo   General Harness - One-click Start
 echo   Engine: %ENGINE%
 echo   Port:   %PORT%
 echo   Mode:   %MODE%
+echo   API Key: %DEEPSEEK_API_KEY:~0,6%... (from registry)
 echo =============================================
 
 call :check_health
