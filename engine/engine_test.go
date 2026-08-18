@@ -46,7 +46,7 @@ api_keys:
   - name: default
     key: ${DEEPSEEK_API_KEY}
 `
-	m, err := parseYAML(src)
+	m, err := parseYAMLString(src)
 	if err != nil {
 		t.Fatal(err)
 	}
