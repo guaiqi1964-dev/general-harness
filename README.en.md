@@ -7,7 +7,7 @@
 > (collapsible Thinking panel). The core engine and the UI are fully decoupled:
 > use the CLI when only the backend is running, and the GUI when both run together.
 
-- **Engine**: `bin/gh_upx.exe` (1.1 MB) / `bin/gh.exe` (3.3 MB) — single file, zero third-party dependencies, ready to run after extraction
+- **Engine**: `bin/gh_upx.exe` (1.6 MB) / `bin/gh.exe` (5.2 MB) — single file, zero third-party dependencies, ready to run after extraction
 - **Engine source**: `engine/` — pure Go standard library (including a hand-written HTTP layer), no external modules
 - **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; falls back to the system browser when unavailable
 
@@ -55,7 +55,7 @@
 | 📊 **Usage Statistics** | Time dimension (10 minutes to half a year, or custom range) and conversation dimension (last N sessions); atomic JSON persistence |
 | 🔄 **Automatic Retry** | Exponential backoff retry (up to 3 attempts) for 429, 5xx, and network errors; upstream errors mapped uniformly |
 | 🔒 **Security** | Optional gateway auth (Bearer Token), per-IP sliding-window rate limiting, CORS allowed, keys support environment variable injection |
-| ⚡ **Extremely Lightweight** | Single 1.1 MB binary (UPX-compressed), zero runtime dependencies; hand-written HTTP layer and YAML subset parser |
+| ⚡ **Extremely Lightweight** | Single 1.6 MB binary (UPX-compressed), zero runtime dependencies; hand-written HTTP layer and YAML subset parser |
 
 ---
 
@@ -416,8 +416,8 @@ vision_models: []               # optional: models that support images
 ```
 General_Harness_Release/
 ├── bin/
-│   ├── gh_upx.exe           # Engine (UPX-compressed, 1.1 MB, recommended)
-│   └── gh.exe               # Engine (stripped, 3.3 MB)
+│   ├── gh_upx.exe           # Engine (UPX-compressed, 1.6 MB, recommended)
+│   └── gh.exe               # Engine (stripped, 5.2 MB)
 ├── engine/                  # Go engine source (zero third-party deps)
 │   ├── main.go              # Entry point & subcommand dispatch
 │   ├── server.go            # HTTP routing & all handlers
@@ -490,11 +490,11 @@ Test coverage: YAML parsing, GGUF parsing (including invalid magic), usage stats
 
 | Build | Size |
 | --- | --- |
-| Engine stripped (`-s -w -buildid=` + trimpath) | 3.3 MB |
-| Engine UPX-compressed (`--lzma -9`) | **1.1 MB** |
+| Engine stripped (`-s -w -buildid=` + trimpath) | 5.2 MB |
+| Engine UPX-compressed (`--lzma -9`) | **1.6 MB** |
 | GUI frontend single-file HTML | <10 KB |
 
-Design approach: hand-written HTTP layer using only the `net` package (avoiding the ~4 MB `net/http` standard library) + zero third-party dependencies + UPX compression. On Windows, the physical floor for a network-capable Go binary is about 0.72 MB (pure `net` package + UPX extreme); this engine's 1.1 MB is very close. The engine is a single file with zero runtime dependencies — extract and run.
+Design approach: hand-written HTTP layer using only the `net` package (avoiding the ~4 MB `net/http` standard library) + zero third-party dependencies + UPX compression. On Windows, the physical floor for a network-capable Go binary is about 0.72 MB (pure `net` package + UPX extreme); this engine's 1.6 MB remains comfortably lightweight. The engine is a single file with zero runtime dependencies — extract and run.
 
 ---
 
@@ -570,8 +570,8 @@ Yes. `config.yaml`, `plugins/*/config.yaml`, and `models/*.gguf` are loaded or s
 <details>
 <summary><b>Why are there two gh.exe files?</b></summary>
 
-- `gh_upx.exe`: UPX-compressed (~1.1 MB), smaller, decompresses to memory at runtime;
-- `gh.exe`: regular stripped build (~3.3 MB), slightly faster startup.
+- `gh_upx.exe`: UPX-compressed (~1.6 MB), smaller, decompresses to memory at runtime;
+- `gh.exe`: regular stripped build (~5.2 MB), slightly faster startup.
 
 They are functionally identical; use `gh_upx.exe` day-to-day. All scripts auto-pick it and only fall back to `gh.exe` when it is missing.
 </details>

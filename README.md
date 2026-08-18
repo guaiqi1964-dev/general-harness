@@ -8,7 +8,7 @@
 > Thinking 界面）两种交互模式。核心引擎与界面完全解耦：只启动后端时使用
 > CLI，前后端一起运行时使用 GUI。
 
-- **引擎**：`bin/gh_upx.exe`（1.1 MB）/ `bin/gh.exe`（3.3 MB）——单文件、零第三方依赖、解压即用
+- **引擎**：`bin/gh_upx.exe`（1.6 MB）/ `bin/gh.exe`（5.2 MB）——单文件、零第三方依赖、解压即用
 - **引擎源码**：`engine/`——纯 Go 标准库实现（含手写 HTTP 层），无任何外部模块
 - **GUI**：`gui/gui.py`——基于 pywebview 调用系统原生 Edge WebView2，不可用时自动回退系统浏览器
 
@@ -56,7 +56,7 @@
 | 📊 **用量统计** | 时间维度（10 分钟至半年或自定义区间）与对话维度（最近 N 次）双聚合，JSON 原子持久化 |
 | 🔄 **自动重试** | 对 429、5xx 及网络错误进行指数退避重试（最多 3 次），上游错误统一映射 |
 | 🔒 **安全机制** | 可选网关鉴权（Bearer Token）、单 IP 滑动窗口限流、CORS 放行、Key 支持环境变量注入 |
-| ⚡ **极致轻量** | 引擎单二进制 1.1 MB（UPX 压缩），零运行时依赖；手写 HTTP 层与 YAML 子集解析器 |
+| ⚡ **极致轻量** | 引擎单二进制 1.6 MB（UPX 压缩），零运行时依赖；手写 HTTP 层与 YAML 子集解析器 |
 
 ---
 
@@ -417,8 +417,8 @@ vision_models: []               # 可选：声明支持图片的模型
 ```
 General_Harness_Release/
 ├── bin/
-│   ├── gh_upx.exe           # 引擎（UPX 压缩版，1.1 MB，推荐）
-│   └── gh.exe               # 引擎（strip 版，3.3 MB）
+│   ├── gh_upx.exe           # 引擎（UPX 压缩版，1.6 MB，推荐）
+│   └── gh.exe               # 引擎（strip 版，5.2 MB）
 ├── engine/                  # Go 引擎源码（零第三方依赖）
 │   ├── main.go              # 入口与子命令分发
 │   ├── server.go            # HTTP 路由与全部处理器
@@ -491,11 +491,11 @@ python -m unittest discover -s tests
 
 | 构建 | 体积 |
 | --- | --- |
-| 引擎 strip（`-s -w -buildid=` + trimpath） | 3.3 MB |
-| 引擎 UPX 压缩（`--lzma -9`） | **1.1 MB** |
+| 引擎 strip（`-s -w -buildid=` + trimpath） | 5.2 MB |
+| 引擎 UPX 压缩（`--lzma -9`） | **1.6 MB** |
 | GUI 前端单文件 HTML | <10 KB |
 
-设计思路：仅使用 `net` 包手写 HTTP 层（避开约 4 MB 的 `net/http` 标准库）+ 零第三方依赖 + UPX 压缩。Windows 上含网络的 Go 二进制物理下限约为 0.72 MB（纯 `net` 包 + UPX 极限），本引擎的 1.1 MB 已非常接近。引擎单文件、零运行时依赖，解压即可运行。
+设计思路：仅使用 `net` 包手写 HTTP 层（避开约 4 MB 的 `net/http` 标准库）+ 零第三方依赖 + UPX 压缩。Windows 上含网络的 Go 二进制物理下限约为 0.72 MB（纯 `net` 包 + UPX 极限），本引擎的 1.6 MB 仍保持在轻量区间。引擎单文件、零运行时依赖，解压即可运行。
 
 ---
 
@@ -571,8 +571,8 @@ python gui/gui.py --url http://127.0.0.1:9000   # GUI 连接新端口
 <details>
 <summary><b>为什么有两个 gh.exe？</b></summary>
 
-- `gh_upx.exe`：UPX 压缩版（约 1.1 MB），体积更小，运行时自动解压到内存；
-- `gh.exe`：常规 strip 版（约 3.3 MB），启动略快。
+- `gh_upx.exe`：UPX 压缩版（约 1.6 MB），体积更小，运行时自动解压到内存；
+- `gh.exe`：常规 strip 版（约 5.2 MB），启动略快。
 
 两者功能完全一致，日常推荐使用 `gh_upx.exe`；所有脚本默认自动选择它，缺失时才回退到 `gh.exe`。
 </details>
