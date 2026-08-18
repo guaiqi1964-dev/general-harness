@@ -130,7 +130,11 @@ async function send() {
         if (data === '[DONE]') continue;
         let ev; try { ev = JSON.parse(data); } catch(e) { continue; }
         if (ev.error) throw new Error(ev.error.message || '网关错误');
-        if (ev.thinking !== undefined) { inThink = true; think += ev.thinking; }
+        // 仅在 thinking 为非空字符串时累加（引擎对无思考的块输出 null，
+        // 直接 += 会把 null 转成字符串 "null" 污染思考面板）。
+        if (typeof ev.thinking === 'string' && ev.thinking.length > 0) {
+          inThink = true; think += ev.thinking;
+        }
         if (ev.content) { full += ev.content; inThink = false; }
         if (ev.content || think) {
           bubble.textContent = full;
