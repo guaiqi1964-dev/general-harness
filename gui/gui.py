@@ -231,6 +231,7 @@ def main() -> int:
     ap.add_argument("--port", type=int, default=8765, help="本地前端端口")
     args = ap.parse_args()
 
+    # 代理服务器在后台线程运行，webview 必须在主线程（pywebview 要求）。
     proxy = run_proxy(args.url, args.port)
     url = f"http://127.0.0.1:{args.port}/index.html"
     print(f"前端已启动: {url}（引擎: {args.url}）")
@@ -238,20 +239,17 @@ def main() -> int:
     try:
         import webview  # type: ignore
 
-        def open_window() -> None:
-            webview.create_window("General Harness", url, width=1000, height=700)
-            webview.start()
-
-        threading.Thread(target=open_window, daemon=True).start()
+        webview.create_window("General Harness", url, width=1000, height=700)
+        webview.start()  # 主线程运行，阻塞直到窗口关闭
     except Exception:
         webbrowser.open(url)
         print("pywebview 不可用，已用系统浏览器打开")
-
-    try:
-        threading.Event().wait()
-    except KeyboardInterrupt:
-        pass
-    proxy.shutdown()
+        try:
+            threading.Event().wait()
+        except KeyboardInterrupt:
+            pass
+    finally:
+        proxy.shutdown()
     return 0
 
 
