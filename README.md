@@ -1,5 +1,7 @@
 # General Harness — 极简 AI 网关
 
+> **English**: [README.en.md](./README.en.md) | **简体中文**: 本文档
+
 > 一个开箱即用的本地 AI 网关：**Go 单二进制引擎**统一提供云端 API 代理、
 > Ollama 协议兼容与 GGUF 文件解析能力，并通过标准 HTTP API 对外服务。
 > 前端支持**终端 CLI**（ANSI 动态思考展示）与 **Webview GUI**（可折叠
