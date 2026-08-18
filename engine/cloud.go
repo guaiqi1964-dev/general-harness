@@ -3,11 +3,13 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -130,12 +132,31 @@ func buildRequest(method, rawURL string, headers map[string]string, body []byte)
 	if err != nil {
 		return nil, err
 	}
+	// 拨号地址必须包含端口：URL 未显式指定时按 scheme 补默认端口
+	// （http→80、https→443），否则 net.Dial 报 "missing port in address"。
+	host := u.Host
+	dialAddr := host
+	hostOnly := host
+	if h, p, err := net.SplitHostPort(host); err == nil {
+		hostOnly = h
+		dialAddr = net.JoinHostPort(h, p)
+	} else {
+		switch u.Scheme {
+		case "http":
+			dialAddr = net.JoinHostPort(host, "80")
+		case "https":
+			dialAddr = net.JoinHostPort(host, "443")
+		default:
+			return nil, fmt.Errorf("不支持的 URL scheme: %s", u.Scheme)
+		}
+	}
 	req := &httpReq{
 		Method:  method,
-		Host:    u.Host,
+		Host:    dialAddr,
 		Path:    u.RequestURI(),
 		Headers: map[string]string{},
 		Body:    body,
+		UseTLS:  u.Scheme == "https",
 	}
 	for k, v := range headers {
 		req.Headers[k] = v
@@ -144,19 +165,23 @@ func buildRequest(method, rawURL string, headers map[string]string, body []byte)
 		req.Headers["Content-Length"] = fmt.Sprintf("%d", len(body))
 	}
 	if req.Headers["Host"] == "" {
-		req.Headers["Host"] = u.Host
+		// HTTP/1.1 Host 头应使用原始主机名（不含端口，除非非默认）。
+		req.Headers["Host"] = host
 	}
+	_ = hostOnly
 	return req, nil
 }
 
 // ---- 极简 HTTP 客户端 ----
 
 type httpReq struct {
-	Method  string
-	Host    string
-	Path    string
-	Headers map[string]string
-	Body    []byte
+	Method    string
+	Host      string
+	Path      string
+	Headers   map[string]string
+	Body      []byte
+	UseTLS    bool
+	ProxyPath string // HTTP 经代理时使用的绝对 URI（http://host/path）
 }
 
 type httpResp struct {
@@ -170,13 +195,137 @@ type netClient struct {
 }
 
 func (c *netClient) Do(req *httpReq) (*httpResp, error) {
+	proxyAddr := proxyFor(req)
+	if proxyAddr != "" {
+		conn, err := c.dialViaProxy(req, proxyAddr)
+		if err != nil {
+			return nil, err
+		}
+		_ = conn.SetDeadline(time.Now().Add(c.timeout))
+		return c.roundTrip(conn, req)
+	}
 	conn, err := net.DialTimeout("tcp", req.Host, connectTimeout)
 	if err != nil {
 		return nil, err
 	}
+	if req.UseTLS {
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: tlsServerName(req.Host)})
+		if err := tlsConn.Handshake(); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		conn = tlsConn
+	}
 	_ = conn.SetDeadline(time.Now().Add(c.timeout))
+	return c.roundTrip(conn, req)
+}
+
+// proxyFor 按环境变量选择代理地址：HTTPS_PROXY / HTTP_PROXY / ALL_PROXY。
+// 返回 "" 表示直连。
+func proxyFor(req *httpReq) string {
+	for _, name := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"} {
+		if v := os.Getenv(name); v != "" {
+			return strings.TrimRight(v, "/")
+		}
+	}
+	return ""
+}
+
+// dialViaProxy 建立到代理的 TCP 连接，并通过 CONNECT 隧道（HTTPS）
+// 或绝对 URI 转发（HTTP）到达目标。
+func (c *netClient) dialViaProxy(req *httpReq, proxyAddr string) (net.Conn, error) {
+	pu, err := url.Parse(proxyAddr)
+	if err != nil {
+		return nil, fmt.Errorf("代理地址解析失败: %v", err)
+	}
+	proxyHost := pu.Host
+	if _, _, err2 := net.SplitHostPort(proxyHost); err2 != nil {
+		switch pu.Scheme {
+		case "https":
+			proxyHost = net.JoinHostPort(proxyHost, "443")
+		default:
+			proxyHost = net.JoinHostPort(proxyHost, "80")
+		}
+	}
+	conn, err := net.DialTimeout("tcp", proxyHost, connectTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("无法连接代理 %s: %v", proxyHost, err)
+	}
+	// 代理本身是 https 时也要 TLS。
+	if pu.Scheme == "https" {
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: tlsServerName(proxyHost)})
+		if err := tlsConn.Handshake(); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("代理 TLS 握手失败: %v", err)
+		}
+		conn = tlsConn
+	}
+	if req.UseTLS {
+		// HTTPS 目标：CONNECT 隧道。
+		var b strings.Builder
+		b.WriteString("CONNECT " + req.Host + " HTTP/1.1\r\n")
+		b.WriteString("Host: " + req.Host + "\r\n")
+		b.WriteString("Proxy-Connection: keep-alive\r\n\r\n")
+		if _, err := conn.Write([]byte(b.String())); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		reader := bufio.NewReaderSize(conn, 4096)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+		parts := strings.Split(strings.TrimSpace(line), " ")
+		status := 0
+		if len(parts) >= 2 {
+			fmt.Sscanf(parts[1], "%d", &status)
+		}
+		// 读完 CONNECT 响应头。
+		for {
+			hl, err := reader.ReadString('\n')
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+			if strings.TrimSpace(hl) == "" {
+				break
+			}
+		}
+		if status != 200 {
+			conn.Close()
+			return nil, fmt.Errorf("代理 CONNECT 失败: HTTP %d", status)
+		}
+		// 隧道已建立：用 bufferedConn 保留 reader 中可能已缓冲的字节，
+		// 再在上层做 TLS 握手。
+		tunneled := &bufferedConn{Conn: conn, r: reader}
+		tlsConn := tls.Client(tunneled, &tls.Config{ServerName: tlsServerName(req.Host)})
+		if err := tlsConn.Handshake(); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("上游 TLS 握手失败: %v", err)
+		}
+		return tlsConn, nil
+	}
+	// HTTP 目标：直接返回代理连接，roundTrip 时改用绝对 URI。
+	req.ProxyPath = "http://" + req.Host + req.Path
+	return conn, nil
+}
+
+// bufferedConn 包装 bufio.Reader 中可能已缓冲的字节。
+type bufferedConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (bc *bufferedConn) Read(p []byte) (int, error) { return bc.r.Read(p) }
+
+func (c *netClient) roundTrip(conn net.Conn, req *httpReq) (*httpResp, error) {
+	path := req.Path
+	if req.ProxyPath != "" {
+		path = req.ProxyPath
+	}
 	var b strings.Builder
-	b.WriteString(req.Method + " " + req.Path + " HTTP/1.1\r\n")
+	b.WriteString(req.Method + " " + path + " HTTP/1.1\r\n")
 	for k, v := range req.Headers {
 		b.WriteString(k + ": " + v + "\r\n")
 	}
@@ -253,6 +402,14 @@ func extractMessage(body []byte) string {
 		return data.Error.Message
 	}
 	return ""
+}
+
+// tlsServerName 从 dial 地址中提取 TLS SNI 主机名（去掉端口）。
+func tlsServerName(hostPort string) string {
+	if h, _, err := net.SplitHostPort(hostPort); err == nil {
+		return h
+	}
+	return hostPort
 }
 
 func orDefault(v, def string) string {
