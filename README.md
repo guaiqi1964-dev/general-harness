@@ -499,32 +499,151 @@ python -m unittest discover -s tests
 
 ## 常见问题 FAQ
 
-**Q1：没有 Python 能运行吗？**
-可以。引擎是独立二进制：`bin\gh_upx.exe serve` 可启动服务，直接运行则进入 CLI。Python 仅用于 GUI 模式与 `start.py` 启动器。
+### 🚀 安装与启动
 
-**Q2：不填 API Key 能用吗？**
-可以。未配置 Key 时仍支持：列出模型、解析 GGUF、通过 `local/demo-qwen2` 对话（返回模型元数据摘要）。云端真实对话需在 `plugins/*/config.yaml` 中配置有效 Key。
+<details>
+<summary><b>没有 Python 能运行吗？</b></summary>
 
-**Q3：如何接入 Open WebUI？**
-将本引擎地址填为 Ollama 兼容端点（`http://127.0.0.1:8000`），Open WebUI 通过 `/api/tags`、`/api/chat` 即可发现并使用模型。
+可以。引擎是独立的单文件二进制：
 
-**Q4：流式输出与普通输出有什么区别？**
-流式（`stream: true`）返回 SSE，逐块推送 `content`，以 `[DONE]` 结束；思考类模型额外返回 `thinking`（`reasoning_content`），GUI 与 CLI 都会动态展示。
+- `bin\gh_upx.exe serve` —— 启动 HTTP 服务；
+- 直接运行 `bin\gh_upx.exe` —— 进入终端 CLI。
 
-**Q5：为什么 GGUF 模型对话只返回元数据？**
-本引擎的定位是"解析 + 网关"：GGUF 提供元数据解析能力，不包含本地推理。如需本地推理，请接入 llama.cpp 等推理后端，或使用云端模型对话。
+Python 仅在两处使用：`start.py` 启动器和 Webview GUI 模式。
+</details>
 
-**Q6：修改配置后需要重启吗？**
-需要。`config.yaml`、`plugins/*/config.yaml`、`models/*.gguf` 均在引擎启动时加载 / 扫描，修改后需重启引擎生效。
+<details>
+<summary><b>安装包和绿色压缩包有什么区别？</b></summary>
 
-**Q7：usage_stats.json 会无限增长吗？**
-目前为追加式存储，未设置自动清理上限。如需长期运行，建议定期备份或清理该文件（删除后引擎会自动重建空库）。
+两者包含完全相同的功能，区别在交付形态：
 
-**Q8：为什么有两个 gh.exe？**
-`gh_upx.exe` 是 UPX 压缩版（体积更小，运行时自动解压到内存），`gh.exe` 是常规 strip 版（启动略快）。两者功能一致，推荐使用 `gh_upx.exe`。
+| 安装包（.exe） | 绿色压缩包（.zip） |
+| --- | --- |
+| 向导式安装，可选择安装位置 | 解压即用，无需安装 |
+| 自动创建桌面与开始菜单快捷方式 | 不写注册表、不留系统目录 |
+| 安装时自动配置 GUI 依赖 | 适合便携或免安装场景 |
 
-**Q9：端口被占用怎么办？**
-使用 `start.py --port <新端口>` 或 `bin\gh_upx.exe serve --port <新端口>`；GUI 可通过 `python gui/gui.py --url http://127.0.0.1:<新端口>` 指定。
+正式使用推荐安装包，临时体验或随身携带推荐绿色包。
+</details>
+
+<details>
+<summary><b>端口被占用怎么办？</b></summary>
+
+指定新的端口即可：
+
+```bash
+python start.py --port 9000                 # 通过启动器
+bin\gh_upx.exe serve --port 9000            # 直接启动引擎
+python gui/gui.py --url http://127.0.0.1:9000   # GUI 连接新端口
+```
+
+> 修改 `config.yaml` 中 `server.port` 后，`start.py` 会自动读取新端口。
+</details>
+
+### ⚙️ 配置与模型
+
+<details>
+<summary><b>不填 API Key 能用吗？</b></summary>
+
+可以。未配置 Key 时仍支持：列出模型、解析 GGUF、通过 `local/demo-qwen2` 对话（返回模型元数据摘要）。云端真实对话需要在 `plugins/*/config.yaml` 中配置有效 Key。
+</details>
+
+<details>
+<summary><b>如何新增一个云端厂商或模型？</b></summary>
+
+三步即可，无需改代码：
+
+1. 在 `plugins/` 下新建以厂商命名的目录（如 `plugins/myvendor/`）；
+2. 在该目录创建 `config.yaml`，包含 `plugin`、`base_url`、`api_key`、`models` 字段；
+3. 重启引擎，新模型即可通过 `myvendor/<模型名>` 使用。
+
+> 也可以直接往现有厂商的 `config.yaml` 的 `models` 列表追加新模型名。
+</details>
+
+<details>
+<summary><b>修改配置后需要重启吗？</b></summary>
+
+需要。`config.yaml`、`plugins/*/config.yaml`、`models/*.gguf` 均在引擎启动时加载或扫描，修改后重启引擎生效。使用 `restart.bat` 即可一键重启。
+</details>
+
+<details>
+<summary><b>为什么有两个 gh.exe？</b></summary>
+
+- `gh_upx.exe`：UPX 压缩版（约 1.1 MB），体积更小，运行时自动解压到内存；
+- `gh.exe`：常规 strip 版（约 3.3 MB），启动略快。
+
+两者功能完全一致，日常推荐使用 `gh_upx.exe`；所有脚本默认自动选择它，缺失时才回退到 `gh.exe`。
+</details>
+
+### 🔌 集成与对接
+
+<details>
+<summary><b>如何接入 Open WebUI？</b></summary>
+
+将本引擎地址配置为 Ollama 兼容端点即可：
+
+- 引擎地址：`http://127.0.0.1:8000`；
+- Open WebUI 通过 `/api/tags`、`/api/chat` 自动发现并使用本引擎的模型。
+
+也支持 curl 直接调用 Ollama 风格接口，例如：
+
+```bash
+curl http://127.0.0.1:8000/api/tags
+```
+</details>
+
+<details>
+<summary><b>流式输出与普通输出有什么区别？</b></summary>
+
+- 普通输出：请求完成后一次性返回完整 JSON；
+- 流式输出（`stream: true`）：以 SSE 逐块推送 `content`，以 `data: [DONE]` 结束，首字延迟更低、体验更流畅；
+- 思考类模型在流式下额外返回 `thinking`（上游 `reasoning_content`），CLI 与 GUI 都会动态展示思考过程。
+</details>
+
+<details>
+<summary><b>为什么 GGUF 模型对话只返回元数据？</b></summary>
+
+本引擎的定位是"解析 + 网关"：GGUF 提供元数据解析能力（架构、上下文长度、词表等），但不包含本地推理。如需本地推理，请接入 llama.cpp 等推理后端，或使用云端模型对话。
+</details>
+
+<details>
+<summary><b>如何让局域网内其他设备访问？</b></summary>
+
+1. 将 `config.yaml` 中 `server.host` 改为 `0.0.0.0`；
+2. 强烈建议同时设置 `gateway_api_key`，避免未授权调用消耗额度；
+3. 其他设备通过 `http://<本机IP>:8000` 访问。
+
+> 默认仅监听 `127.0.0.1`，这是刻意的安全设计。
+</details>
+
+### 🛠 故障排查
+
+<details>
+<summary><b>usage_stats.json 会无限增长吗？</b></summary>
+
+当前为追加式存储，未设置自动清理上限。如需长期运行，建议定期备份或清理该文件——直接删除即可，引擎会自动重建空库，不影响其他功能。
+</details>
+
+<details>
+<summary><b>GUI 窗口打不开怎么办？</b></summary>
+
+按顺序排查：
+
+1. 确认 Python 版本 ≥ 3.10（`python --version`）；
+2. 确认引擎已就绪（`curl http://127.0.0.1:8000/health` 返回 `{"status":"ok"}`）；
+3. 未安装 pywebview 时会自动回退系统浏览器打开，属正常降级；如需原生窗口可执行 `pip install -r gui/requirements.txt`；
+4. 若仍无窗口，直接访问 `http://127.0.0.1:8765/index.html` 使用同一前端。
+</details>
+
+<details>
+<summary><b>引擎启动后立刻退出怎么办？</b></summary>
+
+通常是端口被占用或配置错误：
+
+1. 查看 `gateway.pid` 对应进程是否已存在；
+2. 用 `netstat -ano | findstr :8000` 检查端口占用；
+3. 用 `stop.bat` 清理后重新 `start.bat`；仍失败时检查 `config.yaml` 与 `plugins/*/config.yaml` 语法（可用 `gh gguf` 无关，直接检查 YAML 缩进）。
+</details>
 
 ---
 
