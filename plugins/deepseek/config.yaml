@@ -7,7 +7,7 @@ plugin: openai_compatible
 base_url: https://api.deepseek.com/v1
 api_keys:
   - name: default
-    key: ${DEEPSEEK_API_KEY}
+    key: ${DEEPSEEK_API_KEY}   # 请通过环境变量注入真实 Key，避免明文落盘
   # - name: backup        # 备用 Key 示例（取消注释、填入真实 Key 即可启用）
   #   key: sk-yyyyyy
 models:
