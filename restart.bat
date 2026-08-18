@@ -6,8 +6,9 @@ set "ENGINE=%~dp0bin\gh_upx.exe"
 set PORT=8000
 if not exist "%ENGINE%" set "ENGINE=%~dp0bin\gh.exe"
 
-set MODE=cli
-if /i "%~1"=="gui"   set MODE=gui
+rem ---- Parse mode arg: default gui (GUI); optional cli / server ----
+set MODE=gui
+if /i "%~1"=="cli"    set MODE=cli
 if /i "%~1"=="server" set MODE=server
 
 echo =============================================
@@ -55,17 +56,19 @@ if "%MODE%"=="server" (
     pause
     exit /b 0
 )
-if "%MODE%"=="gui" (
-    echo [MODE] Starting Webview GUI...
-    python --version >nul 2>&1
-    if errorlevel 1 (
-        echo [ERROR] Python not found. GUI mode requires Python 3.10+.
-        pause & exit /b 1
-    )
-    start "General Harness GUI" cmd /k "cd /d %~dp0 && python gui\gui.py --url http://127.0.0.1:%PORT%"
+if "%MODE%"=="cli" (
+    echo [MODE] Terminal CLI mode. Type /exit or Ctrl+C to quit.
+    "%ENGINE%" chat
     exit /b 0
 )
 
-echo [MODE] Terminal CLI mode. Type /exit or Ctrl+C to quit.
-"%ENGINE%" chat
+rem ---- Default mode: Webview GUI ----
+echo [MODE] Starting Webview GUI...
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python not found. GUI mode requires Python 3.10+.
+    echo         Try: restart.bat cli  ^(terminal^)  or  install Python.
+    pause & exit /b 1
+)
+start "General Harness GUI" cmd /k "cd /d %~dp0 && python gui\gui.py --url http://127.0.0.1:%PORT%"
 exit /b 0
