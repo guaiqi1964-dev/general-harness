@@ -14,11 +14,12 @@ import (
 )
 
 type httpRequest struct {
-	Method  string
-	Path    string
-	Query   map[string]string
-	Headers map[string]string
-	Body    []byte
+	Method     string
+	Path       string
+	Query      map[string]string
+	Headers    map[string]string
+	Body       []byte
+	RemoteAddr string
 }
 
 type httpResponse struct {
@@ -133,6 +134,7 @@ func handleConn(conn net.Conn, handler httpHandler) {
 		if err != nil {
 			return
 		}
+		req.RemoteAddr = conn.RemoteAddr().String()
 		w := &responseWriter{conn: conn}
 		handler(req, w)
 		if !w.streamed {

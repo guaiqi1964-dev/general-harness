@@ -64,7 +64,7 @@
 
 ### 方式一：Windows 安装包
 
-下载 `General-Harness-Setup-v0.1.108.exe`，双击运行并按向导操作：
+下载 `General-Harness-Setup-v0.1.109.exe`，双击运行并按向导操作：
 
 - 可选择自定义安装位置（默认 `%ProgramFiles%\General Harness`）；
 - 安装包内置全部运行所需文件（引擎二进制、配置、GUI、示例模型）；
@@ -73,7 +73,7 @@
 
 ### 方式二：绿色压缩包
 
-下载 `General-Harness-v0.1.108.zip`，解压到任意目录即可使用，无需安装。引擎为单文件零依赖，直接双击 `start.bat` 或运行 `bin\gh_upx.exe` 即可。
+下载 `General-Harness-v0.1.109.zip`，解压到任意目录即可使用，无需安装。引擎为单文件零依赖，直接双击 `start.bat` 或运行 `bin\gh_upx.exe` 即可。
 
 ### 一键启动脚本
 

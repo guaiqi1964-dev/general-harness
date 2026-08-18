@@ -92,12 +92,23 @@ func streamCLI(engine *Engine, model string, messages []map[string]any, sessionI
 		fmt.Println(ansiRed + "✗ " + err.Error() + ansiReset)
 		return ""
 	}
+	requestID := "req-" + randHex(6)
+	recorded := false
 	var full strings.Builder
 	thinking := false
-	inThinking := false
 
 	err = provider.streamChatCompletion(actual, messages, "", nil, nil,
 		func(chunk map[string]any) error {
+			// 记账：流式块携带 usage 时记录（与 HTTP 路径一致）。
+			if !recorded {
+				if usage, ok := chunk["usage"].(map[string]any); ok {
+					recorded = true
+					engine.Usage.Record(sessionID, requestID, selected.Name, actual,
+						int(toInt64(usage["prompt_tokens"])),
+						int(toInt64(usage["completion_tokens"])),
+						int(toInt64(usage["total_tokens"])), 0)
+				}
+			}
 			content := toStr(chunk["content"])
 			if content == "" {
 				return nil
@@ -111,15 +122,11 @@ func streamCLI(engine *Engine, model string, messages []map[string]any, sessionI
 			fmt.Print(ansiGreen + content + ansiReset)
 			return nil
 		})
-	_ = inThinking
 	if err != nil {
 		if pe, ok := err.(*PluginError); ok {
 			fmt.Println(ansiRed + "\n✗ " + pe.Message + ansiReset)
 		}
 	}
-	// 记录用量（与 HTTP 路径一致）
-	_ = selected
-	// 简单记账：流式 usage 已由 chunk 回调处理，这里补充最终记录
 	return full.String()
 }
 

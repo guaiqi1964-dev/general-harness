@@ -164,13 +164,17 @@ func (e *Engine) rateLimit(req *httpRequest, w *responseWriter) bool {
 
 func clientIP(req *httpRequest) string {
 	host := req.Headers["x-forwarded-for"]
-	if host == "" {
-		return "local"
+	if host != "" {
+		if idx := strings.Index(host, ","); idx >= 0 {
+			host = host[:idx]
+		}
+		return strings.TrimSpace(host)
 	}
-	if idx := strings.Index(host, ","); idx >= 0 {
-		host = host[:idx]
+	// 无转发头时使用连接对端地址（去端口），避免所有本机客户端共享同一限流桶。
+	if h, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		return h
 	}
-	return strings.TrimSpace(host)
+	return req.RemoteAddr
 }
 
 // ---- 模型列表 ----
