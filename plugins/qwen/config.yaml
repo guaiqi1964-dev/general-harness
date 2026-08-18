@@ -1,0 +1,17 @@
+# 通义千问（阿里云百炼 DashScope）OpenAI 兼容接口
+# 多 API Key：在 api_keys 列表里配置多把 Key，请求时通过请求头
+# X-Gateway-Api-Key 选择（值为 name 或索引，缺省用第一把）。
+plugin: openai_compatible
+base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+api_keys:
+  - name: default
+    key: sk-xxxxxx
+  # - name: backup        # 备用 Key 示例（取消注释、填入真实 Key 即可启用）
+  #   key: sk-yyyyyy
+models:
+  - qwen-turbo
+  - qwen-plus
+  - qwen-vl-plus
+# 支持图片输入的模型（GUI 据此自动切换：视觉模型发原图，否则本地 OCR 转文字）
+vision_models:
+  - qwen-vl-plus

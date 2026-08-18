@@ -1,0 +1,15 @@
+# DeepSeek 厂商配置（OpenAI 兼容接口）
+# 多 API Key：在 api_keys 列表里配置多把 Key，请求时通过请求头
+# X-Gateway-Api-Key 选择（值为 name 或索引，缺省用第一把）。
+# Key 建议用环境变量写法，避免明文落盘，例如：
+#   key: ${DEEPSEEK_API_KEY}
+plugin: openai_compatible
+base_url: https://api.deepseek.com/v1
+api_keys:
+  - name: default
+    key: ${DEEPSEEK_API_KEY}
+  # - name: backup        # 备用 Key 示例（取消注释、填入真实 Key 即可启用）
+  #   key: sk-yyyyyy
+models:
+  - deepseek-chat
+  - deepseek-reasoner

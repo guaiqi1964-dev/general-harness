@@ -1,0 +1,5 @@
+﻿__pycache__/
+*.pyc
+gateway.pid
+usage_stats.json
+*.log

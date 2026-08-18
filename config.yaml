@@ -1,0 +1,28 @@
+# =============================================================
+# 全局配置
+# =============================================================
+
+server:
+  # 默认仅监听本机（127.0.0.1），避免局域网/公网任意设备调用网关消耗额度。
+  # 如需局域网共享，改为 0.0.0.0，并强烈建议同时设置 gateway_api_key。
+  host: 127.0.0.1
+  port: 8000
+
+# 网关访问鉴权（可选，强烈建议对外暴露时开启）：
+# 设置后，/v1/chat/completions 与 /v1/models 必须携带
+#   Authorization: Bearer <该值>
+# 客户端（GUI 的 ⚙️ 设置 / --api-key 参数）需配置相同的 Key。
+# gateway_api_key: ""
+
+# 简易限流（可选）：单 IP 每分钟最大请求数，0 表示不限流。
+# /health 不受限流影响。
+rate_limit_per_minute: 60
+
+# 模型别名：把简短的别名映射到 厂商/模型
+aliases:
+  fast: deepseek/deepseek-chat
+  smart: qwen/qwen-plus
+  long: kimi/moonshot-v1-8k
+
+# 未指定 model 时使用的默认模型
+default_model: deepseek/deepseek-chat
