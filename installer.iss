@@ -1,9 +1,9 @@
-; General Harness v0.2.2 Windows installer script (Inno Setup 6)
+; General Harness v0.2.3 Windows installer script (Inno Setup 6)
 ; Build: ISCC.exe installer.iss
 
 #define MyAppName "General Harness"
-#define MyAppVersion "0.2.2"
-#define MyAppFileVersion "0.2.2.0"
+#define MyAppVersion "0.2.3"
+#define MyAppFileVersion "0.2.3.0"
 #define MyAppPublisher "GQ's Lab"
 #define MyAppExeName "start.bat"
 #define MyAppId "{{8F3B1A2C-5D4E-4A6B-9C7D-1E2F3A4B5C6D}"
