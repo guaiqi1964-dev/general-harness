@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,7 +49,7 @@ func openGGUF(path string) (*GGUFReader, error) {
 		return nil, fmt.Errorf("文件过小，不是合法 GGUF: %s", path)
 	}
 	magic := make([]byte, 4)
-	if _, err := f.Read(magic); err != nil {
+	if _, err := io.ReadFull(f, magic); err != nil {
 		return nil, err
 	}
 	if string(magic) != "GGUF" {
@@ -91,7 +92,7 @@ func readGGUFString(f *os.File) (string, error) {
 		return "", fmt.Errorf("字符串长度异常: %d", length)
 	}
 	buf := make([]byte, length)
-	if _, err := f.Read(buf); err != nil {
+	if _, err := io.ReadFull(f, buf); err != nil {
 		return "", err
 	}
 	return string(buf), nil
@@ -150,7 +151,7 @@ func readGGUFTyped(f *os.File, vtype uint32) (any, error) {
 		if err := binary.Read(f, binary.LittleEndian, &count); err != nil {
 			return nil, err
 		}
-		if count > 10_000_000 {
+		if count > 1_000_000 {
 			return nil, fmt.Errorf("数组长度异常: %d", count)
 		}
 		arr := make([]any, 0, count)
@@ -211,7 +212,7 @@ func (r *GGUFReader) vocabSize() int {
 
 func (r *GGUFReader) toDict(fileSize int64) map[string]any {
 	return map[string]any{
-		"path":            r.Path,
+		"path":            filepath.Base(r.Path),
 		"name":            r.name(),
 		"architecture":    r.architecture(),
 		"version":         r.Version,
