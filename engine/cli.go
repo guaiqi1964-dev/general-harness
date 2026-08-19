@@ -26,6 +26,8 @@ const (
 func runCLI() {
 	cfg := loadGlobalConfig(ROOT + "/config.yaml")
 	engine := newEngine(cfg, ROOT)
+	// CLI 直接退出时也要把尚未批量落盘的用量记录写入磁盘，避免丢失。
+	defer engine.Usage.Flush()
 
 	fmt.Println(ansiBold + "═══ General Harness CLI ═══" + ansiReset)
 	fmt.Println(ansiDim + "云端厂商: " + itoa(len(engine.Cloud.Providers)) +

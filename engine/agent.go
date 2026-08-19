@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+// maxAgentTimeoutSeconds 单条命令超时的上限（秒），防止异常大值导致
+// time.Duration 溢出或进程被长期挂起。
+const maxAgentTimeoutSeconds = 3600
+
 // AgentConfig Agent 命令执行配置。
 type AgentConfig struct {
 	Enabled        bool
@@ -102,6 +106,9 @@ func (a *AgentExecutor) Run(command string, args []string, timeoutSec int) (*Age
 	}
 	timeout := a.timeout()
 	if timeoutSec > 0 {
+		if timeoutSec > maxAgentTimeoutSeconds {
+			timeoutSec = maxAgentTimeoutSeconds
+		}
 		timeout = timeoutSec
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)

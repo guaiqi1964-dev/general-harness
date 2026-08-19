@@ -72,8 +72,9 @@ func httpGet(t *testing.T, addr, path string) (int, map[string]any) {
 }
 
 type rawResp struct {
-	status int
-	body   []byte
+	status  int
+	headers map[string]string
+	body    []byte
 }
 
 func (r *rawResp) bodyMap() map[string]any {
@@ -117,7 +118,7 @@ func readRawResponse(t *testing.T, conn net.Conn) *rawResp {
 			readFull(t, reader, body)
 		}
 	}
-	return &rawResp{status: status, body: body}
+	return &rawResp{status: status, headers: headers, body: body}
 }
 
 func readFull(t *testing.T, r *bufio.Reader, buf []byte) {
@@ -277,5 +278,43 @@ func TestRateLimit(t *testing.T) {
 	}
 	if last != 429 {
 		t.Fatalf("last = %d, want 429", last)
+	}
+}
+
+// TestCORSHeadersOnActualResponse 实际响应（非预检）也必须携带 CORS 头，
+// 否则浏览器会拦截跨域响应。
+func TestCORSHeadersOnActualResponse(t *testing.T) {
+	addr, stop := startTestServer(t)
+	defer stop()
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fmt.Fprintf(conn, "GET /v1/models HTTP/1.1\r\nHost: %s\r\nOrigin: http://example.com\r\nConnection: close\r\n\r\n", addr)
+	resp := readRawResponse(t, conn)
+	if resp.status != 200 {
+		t.Fatalf("models = %d", resp.status)
+	}
+	if got := resp.headers["access-control-allow-origin"]; got != "*" {
+		t.Errorf("access-control-allow-origin = %q, want *", got)
+	}
+}
+
+// TestAgentLoopDisabled 未启用 Agent 时 /v1/agent/loop 应直接 403，而非反复调用云端模型。
+func TestAgentLoopDisabled(t *testing.T) {
+	addr, stop := startTestServer(t)
+	defer stop()
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	body := `{"goal":"echo hi","model":"fake/fake-model"}`
+	fmt.Fprintf(conn, "POST /v1/agent/loop HTTP/1.1\r\nHost: %s\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		addr, len(body), body)
+	resp := readRawResponse(t, conn)
+	if resp.status != 403 {
+		t.Fatalf("agent loop = %d, want 403", resp.status)
 	}
 }

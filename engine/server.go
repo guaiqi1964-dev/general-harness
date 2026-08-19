@@ -85,9 +85,11 @@ func runServer(args []string) {
 
 // dispatch 请求路由。
 func (e *Engine) dispatch(req *httpRequest, w *responseWriter) {
+	// CORS：预检与所有实际响应都需携带 CORS 头（否则浏览器会拦截跨域响应）。
+	w.extra = e.corsHeaders()
 	// CORS 预检
 	if req.Method == "OPTIONS" {
-		w.writeHead(204, e.corsHeaders())
+		w.writeHead(204, nil)
 		return
 	}
 	path := req.Path
@@ -395,6 +397,11 @@ func (e *Engine) handleAgentLoop(req *httpRequest, w *responseWriter) {
 	goal := toStr(body["goal"])
 	if goal == "" {
 		w.JSON(400, map[string]any{"error": map[string]any{"message": "goal 不能为空", "type": "invalid_request_error", "code": 400}})
+		return
+	}
+	// Agent 未启用时直接拒绝，避免反复调用云端模型白白消耗额度。
+	if !e.Agent.enabled() {
+		w.JSON(403, map[string]any{"error": map[string]any{"message": "Agent 命令执行未启用（config.yaml 中 agent.enabled=false）", "type": "permission_error", "code": 403}})
 		return
 	}
 	model := toStr(body["model"])

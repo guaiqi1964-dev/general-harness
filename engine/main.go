@@ -18,7 +18,8 @@ var ROOT string
 
 func init() {
 	// 优先使用工作目录（启动脚本 cd 到发行版根目录再运行）；
-	// 若工作目录无 config.yaml，回退到可执行文件所在目录。
+	// 若工作目录无 config.yaml，回退到可执行文件所在目录（或其上一级，
+	// 因为发行版布局为 <root>/bin/gh.exe，config.yaml 在 bin 的上一级）。
 	cwd, err := os.Getwd()
 	if err == nil {
 		if _, statErr := os.Stat(filepath.Join(cwd, "config.yaml")); statErr == nil {
@@ -31,7 +32,14 @@ func init() {
 		ROOT = "."
 		return
 	}
-	ROOT = filepath.Dir(exe)
+	dir := filepath.Dir(exe)
+	if _, statErr := os.Stat(filepath.Join(dir, "config.yaml")); statErr != nil {
+		parent := filepath.Dir(dir)
+		if _, statErr2 := os.Stat(filepath.Join(parent, "config.yaml")); statErr2 == nil {
+			dir = parent
+		}
+	}
+	ROOT = dir
 }
 
 func main() {

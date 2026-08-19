@@ -33,6 +33,7 @@ type responseWriter struct {
 	conn     net.Conn
 	wrote    bool
 	streamed bool
+	extra    map[string]string // 附加到每个响应的头部（如 CORS），与本次头部合并
 }
 
 func (w *responseWriter) writeHead(status int, headers map[string]string) {
@@ -47,6 +48,13 @@ func (w *responseWriter) writeHead(status int, headers map[string]string) {
 	b.WriteString(" ")
 	b.WriteString(reason)
 	b.WriteString("\r\n")
+	// 先写附加头（CORS），再写本次头部（后者可覆盖前者）。
+	for k, v := range w.extra {
+		b.WriteString(k)
+		b.WriteString(": ")
+		b.WriteString(v)
+		b.WriteString("\r\n")
+	}
 	for k, v := range headers {
 		b.WriteString(k)
 		b.WriteString(": ")

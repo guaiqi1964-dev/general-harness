@@ -81,7 +81,7 @@ func (o *OllamaAdapter) streamChatOllama(model string, messages []map[string]any
 	if err != nil {
 		return err
 	}
-	return provider.streamChatCompletion(actual, messages, keySelector,
+	err = provider.streamChatCompletion(actual, messages, keySelector,
 		optFloat(options, "temperature"), optInt(options, "num_predict"),
 		func(chunk map[string]any) error {
 			if c, ok := chunk["content"].(string); ok && c != "" {
@@ -89,6 +89,16 @@ func (o *OllamaAdapter) streamChatOllama(model string, messages []map[string]any
 			}
 			return nil
 		})
+	// 云端流式也必须以 done:true 收尾，否则 Ollama 客户端会一直等待结束标记。
+	if err != nil {
+		if pe, ok := err.(*PluginError); ok {
+			_ = emit(map[string]any{"error": pe.Message, "done": true})
+		} else {
+			_ = emit(map[string]any{"error": "内部错误", "done": true})
+		}
+		return err
+	}
+	return emit(map[string]any{"done": true})
 }
 
 func localGGUFReply(reader *GGUFReader) string {

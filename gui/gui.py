@@ -432,6 +432,7 @@ def main() -> int:
             pass
     finally:
         proxy.shutdown()
+        proxy.server_close()  # 释放监听 socket，避免资源泄漏
     return 0
 
 

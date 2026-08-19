@@ -57,15 +57,17 @@ class TestGUIProxy(unittest.TestCase):
         deadline = time.time() + 5
         while time.time() < deadline:
             try:
-                urllib.request.urlopen(f"http://127.0.0.1:{cls.proxy_port}/health", timeout=1)
-                break
+                with urllib.request.urlopen(f"http://127.0.0.1:{cls.proxy_port}/health", timeout=1):
+                    break
             except Exception:
                 time.sleep(0.1)
 
     @classmethod
     def tearDownClass(cls):
         cls.proxy.shutdown()
+        cls.proxy.server_close()
         cls.fake.shutdown()
+        cls.fake.server_close()
 
     def _get(self, path):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.proxy_port}{path}", timeout=5) as r:
@@ -104,8 +106,10 @@ class TestGUIProxy(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as ctx:
                 urllib.request.urlopen(f"http://127.0.0.1:{bad.server_address[1]}/health", timeout=5)
             self.assertEqual(ctx.exception.code, 502)
+            ctx.exception.close()  # 释放 HTTPError 持有的连接，避免资源泄漏
         finally:
             bad.shutdown()
+            bad.server_close()
 
 
 class TestIndexContent(unittest.TestCase):
