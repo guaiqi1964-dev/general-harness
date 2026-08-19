@@ -52,6 +52,14 @@ details.think div { white-space:pre-wrap; color:#a99e8a; }
 #input { flex:1; background:var(--panel); color:var(--fg); border:1px solid var(--border);
          border-radius:6px; padding:8px 12px; font-size:14px; resize:none; }
 #status { padding:4px 16px; color:var(--muted); font-size:12px; border-top:1px solid var(--border); }
+button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+#usagePanel { margin:0 16px 12px; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 14px; max-height:40vh; overflow-y:auto; }
+#usagePanel .usage-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-weight:bold; }
+#usagePanel .usage-head button { padding:2px 8px; }
+.usage-row { display:flex; gap:12px; padding:4px 0; border-bottom:1px solid var(--border); font-size:13px; }
+.usage-row span:nth-child(1) { flex:1; word-break:break-all; color:var(--muted); }
+.usage-row span:nth-child(3) { color:var(--accent); white-space:nowrap; }
+.usage-total { margin-top:8px; font-weight:bold; color:var(--accent); }
 .hint { color:var(--muted); font-size:12px; }
 </style>
 </head>
@@ -60,9 +68,15 @@ details.think div { white-space:pre-wrap; color:#a99e8a; }
   <h1>General Harness</h1>
   <label class="hint">模型</label>
   <select id="model"></select>
+  <button id="deep">🧠 深度思考</button>
+  <button id="usage">📊 用量</button>
   <button id="refresh">刷新</button>
   <button id="clear">清空</button>
 </header>
+<div id="usagePanel" hidden>
+  <div class="usage-head"><span>📊 历史对话 Token 用量</span><button id="usageClose">✕</button></div>
+  <div id="usageBody"></div>
+</div>
 <div id="chat"></div>
 <div id="status">就绪</div>
 <div id="inputbar">
@@ -73,7 +87,9 @@ details.think div { white-space:pre-wrap; color:#a99e8a; }
 const $ = s => document.querySelector(s);
 const chat = $('#chat'), modelSel = $('#model'), input = $('#input');
 const statusEl = $('#status'), sendBtn = $('#send');
+const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody');
 let history = [];
+let deepThinking = false;
 const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 async function api(path, opts) {
@@ -87,6 +103,36 @@ async function loadModels() {
     modelSel.innerHTML = d.data.map(m => '<option>'+esc(m.id)+'</option>').join('');
     statusEl.textContent = '已加载 ' + d.data.length + ' 个模型';
   } catch(e) { statusEl.textContent = '模型加载失败: '+e.message; }
+}
+function toggleDeep() {
+  deepThinking = !deepThinking;
+  deepBtn.classList.toggle('active', deepThinking);
+  if (deepThinking) {
+    const opt = [...modelSel.options].find(o => o.value.includes('reasoner'));
+    if (opt) { modelSel.value = opt.value; statusEl.textContent = '深度思考已开启：' + opt.value; }
+    else statusEl.textContent = '未找到推理模型，请在模型列表手动选择';
+  } else {
+    const opt = [...modelSel.options].find(o => /chat|plus|turbo/.test(o.value));
+    if (opt) { modelSel.value = opt.value; statusEl.textContent = '深度思考已关闭：' + opt.value; }
+    else statusEl.textContent = '深度思考已关闭';
+  }
+}
+async function loadUsage() {
+  try {
+    const r = await fetch('/v1/usage/stats?limit=20');
+    if (!r.ok) throw new Error('请求失败');
+    const d = await r.json();
+    const rows = (d.data || []).map(item => {
+      const t = item.last_ts ? new Date(item.last_ts * 1000).toLocaleString() : '';
+      return '<div class="usage-row"><span>' + esc(item.label || item.session_id || '') + '</span><span>' + esc(item.model_name || '') + '</span><span>' + item.tokens + ' tokens</span><span>' + t + '</span></div>';
+    }).join('');
+    const total = (d.data || []).reduce((s, x) => s + (x.tokens || 0), 0);
+    usageBody.innerHTML = rows || '<div class="hint">暂无用量记录</div>';
+    usageBody.innerHTML += '<div class="usage-total">总计：' + total + ' tokens</div>';
+    usagePanel.hidden = false;
+  } catch(e) {
+    statusEl.textContent = '用量加载失败：' + e.message;
+  }
 }
 function addMsg(role, text, thinking) {
   const div = document.createElement('div');
@@ -154,6 +200,9 @@ async function send() {
 $('#send').onclick = send;
 $('#clear').onclick = () => { history = []; chat.innerHTML = ''; };
 $('#refresh').onclick = loadModels;
+$('#deep').onclick = toggleDeep;
+$('#usage').onclick = loadUsage;
+$('#usageClose').onclick = () => { usagePanel.hidden = true; };
 input.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
