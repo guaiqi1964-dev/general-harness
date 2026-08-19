@@ -4,3 +4,4 @@ gateway.pid
 usage_stats.json
 *.log
 gh-engine.exe
+release_assets/
