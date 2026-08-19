@@ -36,7 +36,8 @@ func startTestServer(t *testing.T) (string, func()) {
 	fake.StreamHandler = func(p *Provider, model string, messages []map[string]any,
 		keySelector string, temperature *float64, maxTokens *int,
 		onChunk func(map[string]any) error) error {
-		if err := onChunk(map[string]any{"id": "s1", "content": "你"}); err != nil {
+		// 模拟真实 DeepSeek：首个块 usage:null（经 parseUsage 变为类型化 nil map）
+		if err := onChunk(map[string]any{"id": "s1", "content": "你", "usage": parseUsage(map[string]any{"usage": nil})}); err != nil {
 			return err
 		}
 		if err := onChunk(map[string]any{"id": "s1", "content": "好", "usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}); err != nil {

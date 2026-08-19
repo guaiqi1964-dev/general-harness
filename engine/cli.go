@@ -101,7 +101,7 @@ func streamCLI(engine *Engine, model string, messages []map[string]any, sessionI
 		func(chunk map[string]any) error {
 			// 记账：流式块携带 usage 时记录（与 HTTP 路径一致）。
 			if !recorded {
-				if usage, ok := chunk["usage"].(map[string]any); ok {
+				if usage, ok := chunk["usage"].(map[string]any); ok && usage != nil {
 					recorded = true
 					engine.Usage.Record(sessionID, requestID, selected.Name, actual,
 						int(toInt64(usage["prompt_tokens"])),

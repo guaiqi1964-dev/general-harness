@@ -293,7 +293,7 @@ func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
 			body.Temperature, body.MaxTokens,
 			func(chunk map[string]any) error {
 				if !recorded {
-					if usage, ok := chunk["usage"].(map[string]any); ok {
+					if usage, ok := chunk["usage"].(map[string]any); ok && usage != nil {
 						recorded = true
 						e.Usage.Record(sessionID, requestID, selected.Name, actual,
 							int(toInt64(usage["prompt_tokens"])),
@@ -326,7 +326,7 @@ func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
 		writeEngineError(w, err)
 		return
 	}
-	if usage, ok := resp["usage"].(map[string]any); ok {
+	if usage, ok := resp["usage"].(map[string]any); ok && usage != nil {
 		e.Usage.Record(sessionID, requestID, selected.Name, actual,
 			int(toInt64(usage["prompt_tokens"])),
 			int(toInt64(usage["completion_tokens"])),
