@@ -646,6 +646,13 @@ curl http://127.0.0.1:8000/api/tags
 3. 用 `stop.bat` 清理后重新 `start.bat`；仍失败时检查 `config.yaml` 与 `plugins/*/config.yaml` 语法（可用 `gh gguf` 无关，直接检查 YAML 缩进）。
 </details>
 
+## 已知限制
+
+- **仅支持 Windows**：仓库只提交 Windows 引擎二进制（`bin/gh.exe` / `bin/gh_upx.exe`），macOS/Linux 需自行从源码构建（`cd engine && go build`）。
+- **API Key 请勿明文提交**：`plugins/*/config.yaml` 中的 Key 建议使用 `${环境变量名}` 写法，填入真实 Key 前确认不会被提交到版本库。
+- **YAML 为子集解析器**：手写 YAML 解析器不支持 flow style（`[]`/`{}`）、多行字符串等高级语法，仅覆盖本项目配置所需的形态。
+- **仓库内提交二进制**：`bin/` 与 `models/*.gguf` 直接纳入版本控制以方便开箱即用。
+
 ---
 
 *General Harness — 极简 AI 网关。核心引擎与界面完全解耦，可在不同终端无缝切换使用。*

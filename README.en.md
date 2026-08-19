@@ -645,6 +645,13 @@ Usually a port conflict or a config error:
 3. Run `stop.bat`, then `start.bat` again; if it still fails, check the YAML syntax of `config.yaml` and `plugins/*/config.yaml` (indentation).
 </details>
 
+## Known Limitations
+
+- **Windows only**: the repo ships only Windows engine binaries (`bin/gh.exe` / `bin/gh_upx.exe`); macOS/Linux users must build from source (`cd engine && go build`).
+- **Never commit real API keys**: in `plugins/*/config.yaml`, prefer `${ENV_VAR}` notation; ensure real keys are not committed to version control.
+- **YAML subset parser**: the hand-written YAML parser does not support flow style (`[]`/`{}`) or multi-line strings — only the shapes this project's config requires.
+- **Binaries in repo**: `bin/` and `models/*.gguf` are committed for out-of-box use; use GitHub Releases to slim the repo if needed.
+
 ---
 
 *General Harness — a minimalist AI gateway. The core engine is fully decoupled from the UI, letting you switch seamlessly between different frontends.*

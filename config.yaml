@@ -11,7 +11,6 @@ server:
 # 网关访问鉴权（可选，强烈建议对外暴露时开启）：
 # 设置后，/v1/chat/completions 与 /v1/models 必须携带
 #   Authorization: Bearer <该值>
-# 客户端（GUI 的 ⚙️ 设置 / --api-key 参数）需配置相同的 Key。
 # gateway_api_key: ""
 
 # CORS 允许的来源（可选）：默认 * 允许任意来源。
