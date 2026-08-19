@@ -14,6 +14,10 @@ server:
 # 客户端（GUI 的 ⚙️ 设置 / --api-key 参数）需配置相同的 Key。
 # gateway_api_key: ""
 
+# CORS 允许的来源（可选）：默认 * 允许任意来源。
+# 对外暴露时建议改为具体域名，如 https://example.com。
+# cors_allow_origin: "*"
+
 # 简易限流（可选）：单 IP 每分钟最大请求数，0 表示不限流。
 # /health 不受限流影响。
 rate_limit_per_minute: 60

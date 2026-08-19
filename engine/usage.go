@@ -26,13 +26,15 @@ type UsageRecord struct {
 
 // UsageStore 用量存储。
 type UsageStore struct {
-	mu      sync.Mutex
-	path    string
-	records []UsageRecord
+	mu         sync.Mutex
+	path       string
+	records    []UsageRecord
+	dirty      int
+	maxRecords int
 }
 
 func newUsageStore(path string) *UsageStore {
-	s := &UsageStore{path: path}
+	s := &UsageStore{path: path, maxRecords: 10000}
 	s.load()
 	return s
 }
@@ -45,17 +47,26 @@ func (s *UsageStore) load() {
 	_ = json.Unmarshal(data, &s.records)
 }
 
-func (s *UsageStore) persist() {
+// persistSnapshot 将快照写入磁盘（fsync + 原子重命名；调用方不持锁）。
+func (s *UsageStore) persistSnapshot(snapshot []UsageRecord) {
 	tmp := s.path + ".tmp"
-	dir := filepath.Dir(s.path)
-	_ = os.MkdirAll(dir, 0o755)
-	data, err := json.MarshalIndent(s.records, "", "  ")
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return
+	}
+	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
 		return
 	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return
+	}
+	_ = f.Sync() // fsync，确保数据落盘
+	f.Close()
 	_ = os.Rename(tmp, s.path)
 }
 
@@ -66,14 +77,36 @@ func (s *UsageStore) Record(sessionID, requestID, apiKeyName, modelName string,
 		timestamp = float64(time.Now().Unix())
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.records = append(s.records, UsageRecord{
 		SessionID: sessionID, RequestID: requestID, APIKeyName: apiKeyName,
 		ModelName: modelName, PromptTokens: promptTokens,
 		CompletionTokens: completionTokens, TotalTokens: totalTokens,
 		Timestamp: timestamp,
 	})
-	s.persist()
+	// 上限裁剪，防止无限增长
+	if s.maxRecords > 0 && len(s.records) > s.maxRecords {
+		s.records = s.records[len(s.records)-s.maxRecords:]
+	}
+	s.dirty++
+	shouldPersist := s.dirty >= 50 // 批量持久化，避免每次全量重写 O(n) IO
+	var snapshot []UsageRecord
+	if shouldPersist {
+		snapshot = append([]UsageRecord(nil), s.records...)
+		s.dirty = 0
+	}
+	s.mu.Unlock()
+	if shouldPersist {
+		s.persistSnapshot(snapshot) // 无锁磁盘 IO
+	}
+}
+
+// Flush 强制持久化未写入的记录（供关闭时调用）。
+func (s *UsageStore) Flush() {
+	s.mu.Lock()
+	snapshot := append([]UsageRecord(nil), s.records...)
+	s.dirty = 0
+	s.mu.Unlock()
+	s.persistSnapshot(snapshot)
 }
 
 // ---- 时间维度聚合 ----

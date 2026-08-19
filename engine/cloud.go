@@ -94,7 +94,8 @@ func postStream(url string, headers map[string]string, payload any,
 	client := &netClient{timeout: readTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, newPluginError("上游连接错误: "+err.Error(), 502, "upstream_error")
+		fmt.Fprintln(os.Stderr, "上游连接错误:", err)
+		return 0, newPluginError("上游连接错误，请稍后重试", 502, "upstream_error")
 	}
 	defer resp.Body.Close()
 	if resp.Status >= 400 {
@@ -119,7 +120,8 @@ func doPost(url string, headers map[string]string, body []byte) ([]byte, int, er
 	client := &netClient{timeout: readTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, 0, newPluginError("上游连接错误: "+err.Error(), 502, "upstream_error")
+		fmt.Fprintln(os.Stderr, "上游连接错误:", err)
+		return nil, 0, newPluginError("上游连接错误，请稍后重试", 502, "upstream_error")
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)

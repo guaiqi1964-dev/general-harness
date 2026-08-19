@@ -153,7 +153,8 @@ func TestUsageStore(t *testing.T) {
 		t.Errorf("1h total = %d, want 180", total)
 	}
 
-	// 持久化重载
+	// 持久化重载（先 Flush 强制落盘）
+	store.Flush()
 	store2 := newUsageStore(store.path)
 	convs2, _ := store2.QueryRecentConversations(-1)
 	if len(convs2) != 2 {

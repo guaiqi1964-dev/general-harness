@@ -2,6 +2,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -40,6 +41,9 @@ func newEngine(cfg *GlobalConfig, root string) *Engine {
 
 func runServer(args []string) {
 	cfg := loadGlobalConfig(ROOT + "/config.yaml")
+	if cfg.GatewayAPIKey == "" {
+		fmt.Fprintln(os.Stderr, "警告：未配置 gateway_api_key，网关鉴权已关闭；对外暴露（host=0.0.0.0）时存在未授权调用风险。")
+	}
 	// 命令行覆盖 host/port
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -73,7 +77,7 @@ func runServer(args []string) {
 func (e *Engine) dispatch(req *httpRequest, w *responseWriter) {
 	// CORS 预检
 	if req.Method == "OPTIONS" {
-		w.writeHead(204, corsHeaders())
+		w.writeHead(204, e.corsHeaders())
 		return
 	}
 	path := req.Path
@@ -111,11 +115,15 @@ func (e *Engine) dispatch(req *httpRequest, w *responseWriter) {
 	}
 }
 
-func corsHeaders() map[string]string {
+func (e *Engine) corsHeaders() map[string]string {
+	origin := e.Config.CORSAllowOrigin
+	if origin == "" {
+		origin = "*"
+	}
 	return map[string]string{
-		"Access-Control-Allow-Origin":      "*",
+		"Access-Control-Allow-Origin":      origin,
 		"Access-Control-Allow-Methods":     "GET, POST, OPTIONS",
-		"Access-Control-Allow-Headers":     "*",
+		"Access-Control-Allow-Headers":     "Authorization, Content-Type, X-Gateway-Api-Key",
 	}
 }
 
@@ -125,8 +133,10 @@ func writeEngineError(w *responseWriter, err error) {
 		w.JSON(pe.StatusCode, pe.asDict())
 		return
 	}
+	// 不回传原始错误，避免泄露内部信息（URL/路径/代理地址等）；细节记录到 stderr。
+	fmt.Fprintln(os.Stderr, "内部错误:", err)
 	w.JSON(500, map[string]any{
-		"error": map[string]any{"message": err.Error(), "type": "internal_error", "code": 500},
+		"error": map[string]any{"message": "内部错误", "type": "internal_error", "code": 500},
 	})
 }
 
@@ -137,14 +147,13 @@ func (e *Engine) checkAuth(req *httpRequest) bool {
 		return true
 	}
 	auth := req.Headers["authorization"]
-	token := ""
-	if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
-		token = auth[len("Bearer "):]
-	}
-	if token == "" || token != key {
+	const prefix = "Bearer "
+	if len(auth) < len(prefix) || !strings.EqualFold(auth[:len(prefix)], prefix) {
 		return false
 	}
-	return true
+	token := auth[len(prefix):]
+	// 常数时间比较，避免时序侧信道。
+	return subtle.ConstantTimeCompare([]byte(token), []byte(key)) == 1
 }
 
 // rateLimit 限流检查（返回 true 表示放行）。
@@ -280,7 +289,8 @@ func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
 			if pe, ok := err.(*PluginError); ok {
 				w.SSEEvent(mustJSON(pe.asDict()))
 			} else {
-				w.SSEEvent(mustJSON(map[string]any{"error": map[string]any{"message": err.Error(), "type": "internal_error", "code": 500}}))
+				fmt.Fprintln(os.Stderr, "流式内部错误:", err)
+				w.SSEEvent(mustJSON(map[string]any{"error": map[string]any{"message": "内部错误", "type": "internal_error", "code": 500}}))
 			}
 		}
 		w.Close()
@@ -459,7 +469,7 @@ func (e *Engine) handleOllamaChat(req *httpRequest, w *responseWriter) {
 	}
 	resp, err := e.Ollama.chatOllama(body.Model, body.Messages, body.Options, keySelector)
 	if err != nil {
-		w.JSON(500, map[string]any{"error": err.Error()})
+		writeEngineError(w, err)
 		return
 	}
 	w.JSON(200, resp)
@@ -505,7 +515,7 @@ func (e *Engine) handleOllamaGenerate(req *httpRequest, w *responseWriter) {
 	}
 	resp, err := e.Ollama.chatOllama(body.Model, messages, body.Options, keySelector)
 	if err != nil {
-		w.JSON(500, map[string]any{"error": err.Error()})
+		writeEngineError(w, err)
 		return
 	}
 	content := ""

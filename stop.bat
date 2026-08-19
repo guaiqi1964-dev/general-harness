@@ -22,10 +22,13 @@ if exist "%CD%\gateway.pid" (
 )
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% .*LISTENING"') do (
     if not "%%p"=="0" (
-        taskkill /F /PID %%p >nul 2>&1
+        tasklist /fi "PID eq %%p" /fo csv /nh 2>nul | findstr /i "gh_upx.exe gh.exe" >nul
         if not errorlevel 1 (
-            echo [STOP] Killed port %PORT% owner PID %%p
-            set STOPPED=1
+            taskkill /F /PID %%p >nul 2>&1
+            if not errorlevel 1 (
+                echo [STOP] Killed port %PORT% owner PID %%p
+                set STOPPED=1
+            )
         )
     )
 )

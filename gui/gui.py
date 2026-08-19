@@ -195,13 +195,26 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 req.add_header(key, self.headers[key])
         try:
             with urlopen(req, timeout=300) as resp:
-                body = resp.read()
                 self.send_response(resp.status)
                 ct = resp.headers.get("Content-Type", "application/json")
                 self.send_header("Content-Type", ct)
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                if ct == "text/event-stream":
+                    # SSE 流式：逐块转发，不整体缓冲
+                    self.send_header("Transfer-Encoding", "chunked")
+                    self.end_headers()
+                    while True:
+                        chunk = resp.read(4096)
+                        if not chunk:
+                            break
+                        self.wfile.write(("%x\r\n" % len(chunk)).encode() + chunk + b"\r\n")
+                        self.wfile.flush()
+                    self.wfile.write(b"0\r\n\r\n")
+                    self.wfile.flush()
+                else:
+                    body = resp.read()
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
         except HTTPError as e:
             body = e.read()
             self.send_response(e.code)

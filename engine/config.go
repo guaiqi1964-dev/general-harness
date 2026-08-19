@@ -13,6 +13,7 @@ type GlobalConfig struct {
 	Host               string
 	Port               int
 	GatewayAPIKey      string
+	CORSAllowOrigin    string
 	RateLimitPerMinute int
 	Aliases            map[string]string
 	DefaultModel       string
@@ -23,6 +24,7 @@ func defaultGlobalConfig() *GlobalConfig {
 	return &GlobalConfig{
 		Host:               "127.0.0.1",
 		Port:               8000,
+		CORSAllowOrigin:    "*",
 		RateLimitPerMinute: 60,
 		DefaultModel:       "deepseek/deepseek-chat",
 		Agent:              &AgentConfig{Enabled: false, TimeoutSeconds: 30, MaxOutputBytes: 65536},
@@ -45,6 +47,9 @@ func loadGlobalConfig(path string) *GlobalConfig {
 		}
 	}
 	cfg.GatewayAPIKey = yamlStr(m, "gateway_api_key")
+	if co := yamlStr(m, "cors_allow_origin"); co != "" {
+		cfg.CORSAllowOrigin = co
+	}
 	if rl := yamlInt(m, "rate_limit_per_minute", -1); rl >= 0 {
 		cfg.RateLimitPerMinute = rl
 	}
