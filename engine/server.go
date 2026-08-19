@@ -167,14 +167,7 @@ func (e *Engine) rateLimit(req *httpRequest, w *responseWriter) bool {
 }
 
 func clientIP(req *httpRequest) string {
-	host := req.Headers["x-forwarded-for"]
-	if host != "" {
-		if idx := strings.Index(host, ","); idx >= 0 {
-			host = host[:idx]
-		}
-		return strings.TrimSpace(host)
-	}
-	// 无转发头时使用连接对端地址（去端口），避免所有本机客户端共享同一限流桶。
+	// 仅以连接对端地址作为限流键：X-Forwarded-For 可被客户端伪造，不能用于限流。
 	if h, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
 		return h
 	}

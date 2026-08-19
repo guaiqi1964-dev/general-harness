@@ -3,6 +3,7 @@ package main
 
 import (
 	"bufio"
+	"compress/gzip"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -194,30 +196,92 @@ type netClient struct {
 	timeout time.Duration
 }
 
+// Do 发送请求，自动跟随 3xx 重定向（最多 10 次）。
 func (c *netClient) Do(req *httpReq) (*httpResp, error) {
-	proxyAddr := proxyFor(req)
-	if proxyAddr != "" {
-		conn, err := c.dialViaProxy(req, proxyAddr)
+	for redirect := 0; ; redirect++ {
+		resp, err := c.doOnce(req)
 		if err != nil {
 			return nil, err
 		}
-		_ = conn.SetDeadline(time.Now().Add(c.timeout))
-		return c.roundTrip(conn, req)
+		if !isRedirect(resp.Status) || resp.Headers["location"] == "" {
+			return resp, nil
+		}
+		loc := resp.Headers["location"]
+		resp.Body.Close()
+		if redirect >= 9 {
+			return nil, fmt.Errorf("重定向次数过多")
+		}
+		req, err = c.redirectRequest(req, loc)
+		if err != nil {
+			return nil, err
+		}
 	}
-	conn, err := net.DialTimeout("tcp", req.Host, connectTimeout)
+}
+
+// doOnce 发送一次请求（不跟随重定向）。
+func (c *netClient) doOnce(req *httpReq) (*httpResp, error) {
+	var conn net.Conn
+	var err error
+	if proxyAddr := proxyFor(req); proxyAddr != "" {
+		conn, err = c.dialViaProxy(req, proxyAddr)
+	} else {
+		conn, err = net.DialTimeout("tcp", req.Host, connectTimeout)
+		if err == nil {
+			// 建连后立即设置截止时间，覆盖 TLS 握手阶段。
+			_ = conn.SetDeadline(time.Now().Add(c.timeout))
+			if req.UseTLS {
+				tlsConn := tls.Client(conn, &tls.Config{ServerName: tlsServerName(req.Host)})
+				if hErr := tlsConn.Handshake(); hErr != nil {
+					conn.Close()
+					return nil, hErr
+				}
+				conn = tlsConn
+			}
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	if req.UseTLS {
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: tlsServerName(req.Host)})
-		if err := tlsConn.Handshake(); err != nil {
-			conn.Close()
-			return nil, err
-		}
-		conn = tlsConn
-	}
 	_ = conn.SetDeadline(time.Now().Add(c.timeout))
-	return c.roundTrip(conn, req)
+	resp, err := c.roundTrip(conn, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := wrapResponseBody(resp); err != nil {
+		resp.Body.Close()
+		return nil, err
+	}
+	return resp, nil
+}
+
+func isRedirect(status int) bool {
+	return status == 301 || status == 302 || status == 303 || status == 307 || status == 308
+}
+
+// redirectRequest 构造重定向请求；跨主机时移除 Authorization 防止密钥泄露。
+func (c *netClient) redirectRequest(req *httpReq, loc string) (*httpReq, error) {
+	u, err := url.Parse(loc)
+	if err != nil {
+		return nil, fmt.Errorf("重定向 Location 解析失败: %v", err)
+	}
+	if !u.IsAbs() {
+		scheme := "http"
+		if req.UseTLS {
+			scheme = "https"
+		}
+		base, _ := url.Parse(scheme + "://" + req.Host)
+		u = base.ResolveReference(u)
+	}
+	headers := req.Headers
+	if u.Host != "" && !strings.EqualFold(u.Hostname(), tlsServerName(req.Host)) {
+		headers = map[string]string{}
+		for k, v := range req.Headers {
+			if !strings.EqualFold(k, "Authorization") {
+				headers[k] = v
+			}
+		}
+	}
+	return buildRequest(req.Method, u.String(), headers, req.Body)
 }
 
 // proxyFor 按环境变量选择代理地址：HTTPS_PROXY / HTTP_PROXY / ALL_PROXY。
@@ -251,6 +315,7 @@ func (c *netClient) dialViaProxy(req *httpReq, proxyAddr string) (net.Conn, erro
 	if err != nil {
 		return nil, fmt.Errorf("无法连接代理 %s: %v", proxyHost, err)
 	}
+	_ = conn.SetDeadline(time.Now().Add(c.timeout))
 	// 代理本身是 https 时也要 TLS。
 	if pu.Scheme == "https" {
 		tlsConn := tls.Client(conn, &tls.Config{ServerName: tlsServerName(proxyHost)})
@@ -374,6 +439,102 @@ type connReader struct {
 
 func (r *connReader) Read(p []byte) (int, error) { return r.reader.Read(p) }
 func (r *connReader) Close() error               { return r.conn.Close() }
+
+// readCloser 组合 io.Reader 与关闭函数。
+type readCloser struct {
+	io.Reader
+	close func() error
+}
+
+func (r *readCloser) Close() error { return r.close() }
+
+// chunkedReader 解码 HTTP chunked 传输编码。
+type chunkedReader struct {
+	br   *bufio.Reader
+	left int
+	done bool
+}
+
+func newChunkedReader(r io.Reader) *chunkedReader {
+	return &chunkedReader{br: bufio.NewReader(r)}
+}
+
+func (cr *chunkedReader) Read(p []byte) (int, error) {
+	if cr.done {
+		return 0, io.EOF
+	}
+	if cr.left == 0 {
+		size, err := cr.readChunkSize()
+		if err != nil {
+			return 0, err
+		}
+		if size == 0 {
+			cr.done = true
+			return 0, io.EOF
+		}
+		cr.left = size
+	}
+	if len(p) > cr.left {
+		p = p[:cr.left]
+	}
+	n, err := cr.br.Read(p)
+	cr.left -= n
+	if err != nil {
+		return n, err
+	}
+	if cr.left == 0 {
+		if err := cr.skipCRLF(); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
+func (cr *chunkedReader) readChunkSize() (int, error) {
+	line, err := cr.readLine()
+	if err != nil {
+		return 0, err
+	}
+	if i := strings.IndexByte(line, ';'); i >= 0 {
+		line = line[:i]
+	}
+	size, err := strconv.ParseUint(strings.TrimSpace(line), 16, 32)
+	if err != nil {
+		return 0, fmt.Errorf("无效的 chunk size: %q", line)
+	}
+	return int(size), nil
+}
+
+func (cr *chunkedReader) readLine() (string, error) {
+	line, err := cr.br.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(line, "\r\n"), nil
+}
+
+func (cr *chunkedReader) skipCRLF() error {
+	_, err := cr.readLine()
+	return err
+}
+
+// wrapResponseBody 处理 Transfer-Encoding: chunked 与 Content-Encoding: gzip。
+func wrapResponseBody(resp *httpResp) error {
+	base := resp.Body
+	body := io.Reader(base)
+	if strings.Contains(strings.ToLower(resp.Headers["transfer-encoding"]), "chunked") {
+		body = newChunkedReader(body)
+	}
+	if strings.ToLower(resp.Headers["content-encoding"]) == "gzip" {
+		gz, err := gzip.NewReader(body)
+		if err != nil {
+			return err
+		}
+		body = gz
+	}
+	resp.Body = &readCloser{Reader: body, close: base.Close}
+	return nil
+}
 
 func mapStatusError(status int, body []byte) *PluginError {
 	msg := extractMessage(body)

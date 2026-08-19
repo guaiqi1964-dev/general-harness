@@ -155,7 +155,10 @@ func readRequest(reader *bufio.Reader) (*httpRequest, error) {
 	method, target := parts[0], parts[1]
 	path, query := splitQuery(target)
 	headers := map[string]string{}
-	for {
+	for count := 0; ; count++ {
+		if count >= 100 {
+			return nil, fmt.Errorf("请求头数量过多")
+		}
 		hl, err := readLine(reader)
 		if err != nil {
 			return nil, err
@@ -228,12 +231,25 @@ func urlDecode(s string) string {
 	return b.String()
 }
 
+const maxLineLen = 16 * 1024 // 请求行/头单行长度上限（防内存耗尽 DoS）
+
 func readLine(r *bufio.Reader) (string, error) {
-	line, err := r.ReadString('\n')
-	if err != nil {
-		return "", err
+	var buf []byte
+	for {
+		part, err := r.ReadSlice('\n')
+		buf = append(buf, part...)
+		if len(buf) > maxLineLen {
+			return "", fmt.Errorf("请求行或头部过长（超过 %d 字节）", maxLineLen)
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		break
 	}
-	line = strings.TrimSuffix(line, "\n")
+	line := strings.TrimSuffix(string(buf), "\n")
 	line = strings.TrimSuffix(line, "\r")
 	return line, nil
 }
