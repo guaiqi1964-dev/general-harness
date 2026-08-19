@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,7 @@ type AgentResult struct {
 	Stderr    string   `json:"stderr"`
 	TimedOut  bool     `json:"timed_out"`
 	Truncated bool     `json:"truncated"`
+	Error     string   `json:"error,omitempty"`
 }
 
 // AgentExecutor 命令执行器。
@@ -178,3 +180,68 @@ func sanitizedEnv() []string {
 	}
 	return out
 }
+
+// ---- Agent 循环编排 ----
+
+const agentSystemPrompt = "你是一个能够在 Windows 主机上执行系统命令的 AI Agent。为了完成用户任务，你可以执行命令并观察输出结果。\n\n执行命令时，请单独输出一行，以 CMD: 开头，格式为：\nCMD: <可执行文件> <参数...>\n\n系统会执行该命令并把输出返回给你，你可以据此继续执行下一步。当你已经完成任务时，请直接输出最终答案（不要包含 CMD: 行）。"
+
+// parseCommandBlock 从模型回复中提取第一条 CMD: 命令，返回可执行文件名与参数。
+func parseCommandBlock(text string) (string, []string) {
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if len(trimmed) >= 3 && strings.EqualFold(trimmed[:3], "CMD") {
+			rest := strings.TrimLeft(trimmed[3:], ":： \t")
+			fields := strings.Fields(rest)
+			if len(fields) > 0 {
+				return fields[0], fields[1:]
+			}
+		}
+	}
+	return "", nil
+}
+
+// runAgentLoop 编排 Agent 循环：模型决策 → 执行命令 → 结果回传 → 继续。
+// 返回最终答案；onStep 用于收集每一步的执行信息。
+func (e *Engine) runAgentLoop(provider *Provider, actual string, keySelector string,
+	goal string, maxSteps int, onStep func(map[string]any)) (string, error) {
+	messages := []map[string]any{
+		{"role": "system", "content": agentSystemPrompt},
+		{"role": "user", "content": goal},
+	}
+	for step := 0; step < maxSteps; step++ {
+		resp, err := provider.chatCompletion(actual, messages, keySelector, nil, nil)
+		if err != nil {
+			return "", err
+		}
+		answer := toStr(resp["content"])
+		cmd, args := parseCommandBlock(answer)
+		if cmd == "" {
+			return answer, nil // 无 CMD: 行 = 最终答案
+		}
+		result, runErr := e.Agent.Run(cmd, args, 0)
+		if runErr != nil {
+			result = &AgentResult{Command: cmd, Args: args, Error: runErr.Error()}
+		}
+		feedback := "命令输出：\n" + result.Stdout
+		if result.Stderr != "" {
+			feedback += "\n[stderr]\n" + result.Stderr
+		}
+		if result.TimedOut {
+			feedback += "\n[命令执行超时]"
+		}
+		if result.Error != "" {
+			feedback += "\n[错误] " + result.Error
+		}
+		messages = append(messages,
+			map[string]any{"role": "assistant", "content": answer},
+			map[string]any{"role": "user", "content": feedback},
+		)
+		if onStep != nil {
+			onStep(map[string]any{
+				"step": step + 1, "command": cmd, "args": args, "result": result,
+			})
+		}
+	}
+	return "", fmt.Errorf("达到最大步数 %d，未完成任务", maxSteps)
+}
+
