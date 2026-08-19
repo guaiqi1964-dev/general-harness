@@ -249,6 +249,9 @@ func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
 	}
 	requestID := "req-" + randHex(6)
 	sessionID := body.SessionID
+	if sessionID == "" {
+		sessionID = "sess-" + randHex(6) // 客户端未提供时自动生成，保证对话用量可聚合
+	}
 	keySelector := req.Headers["x-gateway-api-key"]
 
 	// 本地 GGUF 模型

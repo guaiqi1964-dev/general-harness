@@ -90,6 +90,7 @@ const statusEl = $('#status'), sendBtn = $('#send');
 const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody');
 let history = [];
 let deepThinking = false;
+let sessionId = 'sess-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 async function api(path, opts) {
@@ -157,7 +158,7 @@ async function send() {
     const r = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({model: modelSel.value, messages: history.concat([{role:'user',content:text}]), stream: true, stream_options: {include_usage: true}})
+      body: JSON.stringify({model: modelSel.value, messages: history.concat([{role:'user',content:text}]), stream: true, stream_options: {include_usage: true}, session_id: sessionId})
     });
     if (!r.ok || !r.body) throw new Error('请求失败');
     const reader = r.body.getReader();
@@ -198,7 +199,7 @@ async function send() {
   setBusy(false);
 }
 $('#send').onclick = send;
-$('#clear').onclick = () => { history = []; chat.innerHTML = ''; };
+$('#clear').onclick = () => { history = []; chat.innerHTML = ''; sessionId = 'sess-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); };
 $('#refresh').onclick = loadModels;
 $('#deep').onclick = toggleDeep;
 $('#usage').onclick = loadUsage;
