@@ -442,8 +442,7 @@ General_Harness_Release/
 │   ├── deepseek/config.yaml
 │   ├── kimi/config.yaml
 │   ├── openai/config.yaml
-│   ├── qwen/config.yaml
-│   └── openai_compatible/plugin.py   # Compatibility note (engine is embedded; this file is for reference)
+│   └── qwen/config.yaml
 ├── cli/README.md            # CLI mode notes
 ├── config.yaml              # Global config
 ├── start.py                 # Unified launcher

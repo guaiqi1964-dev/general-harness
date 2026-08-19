@@ -196,6 +196,10 @@ func clientIP(req *httpRequest) string {
 // ---- 模型列表 ----
 
 func (e *Engine) handleModels(req *httpRequest, w *responseWriter) {
+	if req.Method != "GET" {
+		w.JSON(405, map[string]any{"error": map[string]any{"message": "Method Not Allowed", "type": "method_not_allowed", "code": 405}})
+		return
+	}
 	if !e.checkAuth(req) {
 		w.JSON(401, map[string]any{"error": map[string]any{"message": "网关鉴权失败：缺少或错误的 API Key", "type": "authentication_error", "code": 401}})
 		return
@@ -303,6 +307,10 @@ func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
 				w.SSEEvent(mustJSON(map[string]any{"error": map[string]any{"message": "内部错误", "type": "internal_error", "code": 500}}))
 			}
 		}
+		if !recorded {
+			// 上游未返回 usage 块时，至少记录本次请求（token 记为 0）
+			e.Usage.Record(sessionID, requestID, selected.Name, actual, 0, 0, 0, 0)
+		}
 		w.Close()
 		return
 	}
@@ -368,6 +376,10 @@ func (e *Engine) handleAgentRun(req *httpRequest, w *responseWriter) {
 // ---- 用量统计 ----
 
 func (e *Engine) handleUsageStats(req *httpRequest, w *responseWriter) {
+	if req.Method != "GET" {
+		w.JSON(405, map[string]any{"error": map[string]any{"message": "Method Not Allowed", "type": "method_not_allowed", "code": 405}})
+		return
+	}
 	if !e.checkAuth(req) {
 		w.JSON(401, map[string]any{"error": map[string]any{"message": "网关鉴权失败", "type": "authentication_error", "code": 401}})
 		return
@@ -437,6 +449,10 @@ func parseLimit(raw string) (int, error) {
 // ---- Ollama 兼容端点 ----
 
 func (e *Engine) handleOllamaTags(req *httpRequest, w *responseWriter) {
+	if req.Method != "GET" {
+		w.JSON(405, map[string]any{"error": map[string]any{"message": "Method Not Allowed", "type": "method_not_allowed", "code": 405}})
+		return
+	}
 	if !e.checkAuth(req) {
 		w.JSON(401, map[string]any{"error": "unauthorized"})
 		return
@@ -538,6 +554,10 @@ func (e *Engine) handleOllamaGenerate(req *httpRequest, w *responseWriter) {
 // ---- GGUF 信息 ----
 
 func (e *Engine) handleGGUFInfo(req *httpRequest, w *responseWriter) {
+	if req.Method != "GET" {
+		w.JSON(405, map[string]any{"error": map[string]any{"message": "Method Not Allowed", "type": "method_not_allowed", "code": 405}})
+		return
+	}
 	if !e.checkAuth(req) {
 		w.JSON(401, map[string]any{"error": "unauthorized"})
 		return
@@ -609,7 +629,8 @@ func isDigits(s string) bool {
 
 func atoi(s string) int {
 	n := 0
-	for _, c := range s {
+	for i := 0; i < len(s) && i < 10; i++ {
+		c := s[i]
 		if c < '0' || c > '9' {
 			break
 		}

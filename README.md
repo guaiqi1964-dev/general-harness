@@ -443,8 +443,7 @@ General_Harness_Release/
 │   ├── deepseek/config.yaml
 │   ├── kimi/config.yaml
 │   ├── openai/config.yaml
-│   ├── qwen/config.yaml
-│   └── openai_compatible/plugin.py   # 兼容说明（引擎为内嵌实现，此文件供参考）
+│   └── qwen/config.yaml
 ├── cli/README.md            # CLI 模式说明
 ├── config.yaml              # 全局配置
 ├── start.py                 # 统一启动器

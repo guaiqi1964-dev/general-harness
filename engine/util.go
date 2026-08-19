@@ -11,7 +11,11 @@ import (
 func randHex(n int) string {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		return "000000000000"
+		// 熵源异常时用纳秒时间戳兜底，避免全零碰撞
+		now := time.Now().UnixNano()
+		for i := range b {
+			b[i] = byte(now >> (8 * (i % 8)))
+		}
 	}
 	return hex.EncodeToString(b)
 }
