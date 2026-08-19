@@ -49,25 +49,25 @@ func postJSON(url string, headers map[string]string, payload any) (map[string]an
 	}
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		respBody, status, err := doPost(url, headers, data)
+		respBody, status, retryAfter, err := doPost(url, headers, data)
 		if err != nil {
 			lastErr = err
 			if attempt < 2 {
-				time.Sleep(time.Duration(1<<attempt) * time.Second)
+				time.Sleep(retryDelay(retryAfter, attempt))
 			}
 			continue
 		}
-	if status >= 400 {
-		pe := mapStatusError(status, respBody)
-		if pe.StatusCode == 429 || pe.StatusCode >= 500 {
-			lastErr = pe
-			if attempt < 2 {
-				time.Sleep(time.Duration(1<<attempt) * time.Second)
+		if status >= 400 {
+			pe := mapStatusError(status, respBody)
+			if pe.StatusCode == 429 || pe.StatusCode >= 500 {
+				lastErr = pe
+				if attempt < 2 {
+					time.Sleep(retryDelay(retryAfter, attempt))
+				}
+				continue
 			}
-			continue
+			return nil, pe
 		}
-		return nil, pe
-	}
 		var data map[string]any
 		if err := json.Unmarshal(respBody, &data); err != nil {
 			return nil, fmt.Errorf("上游响应解析失败: %w", err)
@@ -112,23 +112,36 @@ func postStream(url string, headers map[string]string, payload any,
 	return resp.Status, scanner.Err()
 }
 
-func doPost(url string, headers map[string]string, body []byte) ([]byte, int, error) {
+func doPost(url string, headers map[string]string, body []byte) ([]byte, int, string, error) {
 	req, err := buildRequest("POST", url, headers, body)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 	client := &netClient{timeout: readTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "上游连接错误:", err)
-		return nil, 0, newPluginError("上游连接错误，请稍后重试", 502, "upstream_error")
+		return nil, 0, "", newPluginError("上游连接错误，请稍后重试", 502, "upstream_error")
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, resp.Status, err
+		return nil, resp.Status, "", err
 	}
-	return data, resp.Status, nil
+	return data, resp.Status, resp.Headers["retry-after"], nil
+}
+
+// retryDelay 根据 Retry-After 头（秒）计算重试等待时间，缺省用指数退避。
+func retryDelay(retryAfter string, attempt int) time.Duration {
+	if retryAfter != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && secs > 0 {
+			if secs > 60 {
+				secs = 60
+			}
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return time.Duration(1<<attempt) * time.Second
 }
 
 func buildRequest(method, rawURL string, headers map[string]string, body []byte) (*httpReq, error) {

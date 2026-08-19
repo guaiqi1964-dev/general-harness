@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 )
@@ -70,7 +71,16 @@ func runServer(args []string) {
 	_ = os.WriteFile(ROOT+"/gateway.pid", []byte(itoa(os.Getpid())), 0o644)
 	fmt.Printf("引擎就绪：%d 个云端厂商，%d 个本地 GGUF 模型，监听 %s\n",
 		len(engine.Cloud.Providers), len(engine.GGUF.Models), addr)
+	// 优雅停机：收到退出信号时关闭监听，落盘未写入的用量记录
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+	go func() {
+		<-sig
+		fmt.Println("\n收到退出信号，正在关闭引擎...")
+		_ = ln.Close()
+	}()
 	serve(ln, engine.dispatch)
+	engine.Usage.Flush()
 }
 
 // dispatch 请求路由。

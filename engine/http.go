@@ -115,13 +115,20 @@ func statusText(code int) string {
 	}
 }
 
+const maxConcurrentConns = 1000
+
 func serve(listener net.Listener, handler httpHandler) {
+	sem := make(chan struct{}, maxConcurrentConns)
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}
-		go handleConn(conn, handler)
+		sem <- struct{}{}
+		go func(c net.Conn) {
+			defer func() { <-sem }()
+			handleConn(c, handler)
+		}(conn)
 	}
 }
 
