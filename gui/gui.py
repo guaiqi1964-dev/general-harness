@@ -17,6 +17,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from urllib.parse import urlparse, parse_qs, quote
 
 DEFAULT_ENGINE = "http://127.0.0.1:8000"
 
@@ -61,6 +62,10 @@ button.active { background:var(--accent); color:#fff; border-color:var(--accent)
 .usage-row span:nth-child(3) { color:var(--accent); white-space:nowrap; }
 .usage-total { margin-top:8px; font-weight:bold; color:var(--accent); }
 .hint { color:var(--muted); font-size:12px; }
+.usage-range { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+.usage-range label { color:var(--muted); font-size:12px; white-space:nowrap; }
+#usageChart { width:100%; height:auto; display:block; margin-bottom:10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); }
+.usage-subhead { margin:8px 0 4px; font-weight:bold; color:var(--muted); font-size:12px; }
 </style>
 </head>
 <body>
@@ -74,7 +79,19 @@ button.active { background:var(--accent); color:#fff; border-color:var(--accent)
   <button id="clear">清空</button>
 </header>
 <div id="usagePanel" hidden>
-  <div class="usage-head"><span>📊 历史对话 Token 用量</span><button id="usageClose">✕</button></div>
+  <div class="usage-head"><span>📊 Token 用量统计</span><button id="usageClose">✕</button></div>
+  <div class="usage-range">
+    <label>分时范围</label>
+    <select id="usageRange">
+      <option value="1h">最近 1 小时</option>
+      <option value="1d">最近 1 天</option>
+      <option value="7d">最近 7 天</option>
+      <option value="30d">最近 30 天</option>
+      <option value="total">全部</option>
+    </select>
+  </div>
+  <img id="usageChart" alt="分时统计图">
+  <div class="usage-subhead">历史对话</div>
   <div id="usageBody"></div>
 </div>
 <div id="chat"></div>
@@ -87,7 +104,7 @@ button.active { background:var(--accent); color:#fff; border-color:var(--accent)
 const $ = s => document.querySelector(s);
 const chat = $('#chat'), modelSel = $('#model'), input = $('#input');
 const statusEl = $('#status'), sendBtn = $('#send');
-const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody');
+const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody'), usageRange = $('#usageRange'), usageChart = $('#usageChart');
 let history = [];
 let deepThinking = false;
 let sessionId = 'sess-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -118,7 +135,11 @@ function toggleDeep() {
     else statusEl.textContent = '深度思考已关闭';
   }
 }
+function loadChart() {
+  usageChart.src = '/usage_chart?time_range=' + encodeURIComponent(usageRange.value);
+}
 async function loadUsage() {
+  loadChart();
   try {
     const r = await fetch('/v1/usage/stats?limit=20');
     if (!r.ok) throw new Error('请求失败');
@@ -204,6 +225,7 @@ $('#refresh').onclick = loadModels;
 $('#deep').onclick = toggleDeep;
 $('#usage').onclick = loadUsage;
 $('#usageClose').onclick = () => { usagePanel.hidden = true; };
+$('#usageRange').onchange = loadChart;
 input.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
@@ -211,6 +233,73 @@ loadModels();
 </script>
 </body>
 </html>"""
+
+
+# ---- 分时统计图（纯 Python 生成 SVG，零第三方依赖） ----
+
+def _esc_xml(s: str) -> str:
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;").replace("'", "&apos;"))
+
+
+def _svg_placeholder(msg: str) -> str:
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 160" '
+            'style="width:100%;height:auto">'
+            f'<text x="330" y="80" fill="#8f959e" font-size="13" '
+            f'text-anchor="middle">{_esc_xml(msg)}</text></svg>')
+
+
+def build_usage_svg(items) -> str:
+    """把 /v1/usage/stats?time_range=... 的分桶数据画成竖向柱状图 SVG。"""
+    if not items:
+        return _svg_placeholder("暂无用量记录")
+
+    W, H = 660, 240
+    left, right, top, bottom = 46, 14, 18, 38
+    plot_w = W - left - right
+    plot_h = H - top - bottom
+    n = len(items)
+
+    max_tok = 0
+    for it in items:
+        try:
+            v = int(it.get("tokens", 0))
+        except (TypeError, ValueError):
+            v = 0
+        if v > max_tok:
+            max_tok = v
+    scale = max_tok if max_tok > 0 else 1
+
+    s = [f'<rect x="0" y="0" width="{W}" height="{H}" fill="none"/>']
+    ticks = ([(0.0, "0"), (0.5, str(max_tok // 2)), (1.0, str(max_tok))]
+             if max_tok > 0 else [(0.0, "0")])
+    for frac, lbl in ticks:
+        y = top + plot_h * (1.0 - frac)
+        s.append(f'<line x1="{left}" y1="{y:.1f}" x2="{W - right}" y2="{y:.1f}" stroke="#3a3f45" stroke-width="1"/>')
+        s.append(f'<text x="{left - 6}" y="{y + 4:.1f}" fill="#8f959e" font-size="10" text-anchor="end">{_esc_xml(lbl)}</text>')
+
+    slot = plot_w / n
+    bar_w = max(4.0, slot * 0.62)
+    step = max(1, (n + 11) // 12)  # 最多约 12 个 X 轴标签
+    for i, it in enumerate(items):
+        try:
+            tok = int(it.get("tokens", 0))
+        except (TypeError, ValueError):
+            tok = 0
+        h = plot_h * (tok / scale)
+        x = left + slot * i + (slot - bar_w) / 2.0
+        y = top + plot_h - h
+        bh = h if h > 0 else 1.0
+        s.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{bh:.1f}" rx="2" fill="#5E81AC"/>')
+        cx = x + bar_w / 2.0
+        if tok > 0:
+            s.append(f'<text x="{cx:.1f}" y="{y - 4:.1f}" fill="#d8dee6" font-size="10" text-anchor="middle">{tok}</text>')
+        if i % step == 0 or i == n - 1:
+            lbl = str(it.get("label", "") or "")
+            s.append(f'<text transform="translate({cx:.1f},{H - 14}) rotate(-35)" text-anchor="end" x="0" y="0" fill="#8f959e" font-size="10">{_esc_xml(lbl)}</text>')
+    return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" '
+            'style="width:100%%;height:auto">%s</svg>' % (W, H, "".join(s)))
+
 
 # 代理：把 /api/* 转发到 Go 引擎（避免 CORS）。
 class ProxyHandler(BaseHTTPRequestHandler):
@@ -235,6 +324,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        if path.startswith("/usage_chart"):
+            self._usage_chart(path)
             return
         length = int(self.headers.get("Content-Length") or 0)
         data = self.rfile.read(length) if length else None
@@ -279,6 +371,29 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+    def _render_usage_svg(self, time_range: str) -> str:
+        url = "%s/v1/usage/stats?time_range=%s" % (self._engine(), quote(time_range))
+        try:
+            with urlopen(url, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            return build_usage_svg(data.get("data", []))
+        except HTTPError as e:
+            return _svg_placeholder("引擎返回错误: %d" % e.code)
+        except Exception as e:  # noqa: BLE001
+            return _svg_placeholder("无法加载数据: %s" % e)
+
+    def _usage_chart(self, path: str) -> None:
+        qs = parse_qs(urlparse(path).query)
+        time_range = (qs.get("time_range") or ["1h"])[0]
+        svg = self._render_usage_svg(time_range)
+        body = svg.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     do_GET = lambda self: self._proxy("GET")   # noqa: E731
     do_POST = lambda self: self._proxy("POST")  # noqa: E731
