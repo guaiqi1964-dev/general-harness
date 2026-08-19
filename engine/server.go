@@ -18,6 +18,7 @@ type Engine struct {
 	Ollama *OllamaAdapter
 	Usage  *UsageStore
 	Rate   *RateLimiter
+	Agent  *AgentExecutor
 }
 
 func newEngine(cfg *GlobalConfig, root string) *Engine {
@@ -31,6 +32,7 @@ func newEngine(cfg *GlobalConfig, root string) *Engine {
 		GGUF:   gguf,
 		Usage:  usage,
 		Rate:   newRateLimiter(),
+		Agent:  newAgentExecutor(cfg.Agent),
 	}
 	engine.Ollama = newOllamaAdapter(cloud, gguf, cfg.Aliases)
 	return engine
@@ -100,6 +102,8 @@ func (e *Engine) dispatch(req *httpRequest, w *responseWriter) {
 		e.handleModels(req, w)
 	case path == "/api/generate":
 		e.handleOllamaGenerate(req, w)
+	case path == "/v1/agent/run":
+		e.handleAgentRun(req, w)
 	case strings.HasPrefix(path, "/api/gguf/"):
 		e.handleGGUFInfo(req, w)
 	default:
@@ -310,6 +314,42 @@ func localName(model string) string {
 		return model[idx+1:]
 	}
 	return model
+}
+
+// ---- Agent 命令执行 ----
+
+func (e *Engine) handleAgentRun(req *httpRequest, w *responseWriter) {
+	if req.Method != "POST" {
+		w.JSON(405, map[string]any{"error": map[string]any{"message": "Method Not Allowed", "type": "method_not_allowed", "code": 405}})
+		return
+	}
+	if !e.checkAuth(req) {
+		w.JSON(401, map[string]any{"error": map[string]any{"message": "网关鉴权失败：缺少或错误的 API Key", "type": "authentication_error", "code": 401}})
+		return
+	}
+	var body map[string]any
+	if err := jsonBody(req, &body); err != nil {
+		w.JSON(400, map[string]any{"error": map[string]any{"message": "请求体解析失败", "type": "invalid_request_error", "code": 400}})
+		return
+	}
+	command := toStr(body["command"])
+	if command == "" {
+		w.JSON(400, map[string]any{"error": map[string]any{"message": "command 不能为空", "type": "invalid_request_error", "code": 400}})
+		return
+	}
+	var args []string
+	if raw, ok := body["args"].([]any); ok {
+		for _, a := range raw {
+			args = append(args, toStr(a))
+		}
+	}
+	timeoutSec := int(toInt64(body["timeout_seconds"]))
+	res, err := e.Agent.Run(command, args, timeoutSec)
+	if err != nil {
+		writeEngineError(w, err)
+		return
+	}
+	w.JSON(200, res)
 }
 
 // ---- 用量统计 ----

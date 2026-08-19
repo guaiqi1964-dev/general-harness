@@ -21,6 +21,7 @@ func loadYAMLFile(path string) (map[string]any, error) {
 }
 
 func parseYAMLString(src string) (map[string]any, error) {
+	src = strings.TrimPrefix(src, "\ufeff")
 	p := &yamlParser{lines: tokenizeYAML(src)}
 	v, err := p.parseNode(0)
 	if err != nil {
@@ -305,6 +306,18 @@ func yamlInt(m map[string]any, key string, def int) int {
 		}
 		if f, ok := v.(int64); ok {
 			return int(f)
+		}
+	}
+	return def
+}
+
+func yamlBool(m map[string]any, key string, def bool) bool {
+	if v, ok := m[key]; ok && v != nil {
+		if b, ok := v.(bool); ok {
+			return b
+		}
+		if s, ok := v.(string); ok {
+			return s == "true" || s == "yes" || s == "1"
 		}
 	}
 	return def

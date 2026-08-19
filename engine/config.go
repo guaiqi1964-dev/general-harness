@@ -16,6 +16,7 @@ type GlobalConfig struct {
 	RateLimitPerMinute int
 	Aliases            map[string]string
 	DefaultModel       string
+	Agent              *AgentConfig
 }
 
 func defaultGlobalConfig() *GlobalConfig {
@@ -24,6 +25,7 @@ func defaultGlobalConfig() *GlobalConfig {
 		Port:               8000,
 		RateLimitPerMinute: 60,
 		DefaultModel:       "deepseek/deepseek-chat",
+		Agent:              &AgentConfig{Enabled: false, TimeoutSeconds: 30, MaxOutputBytes: 65536},
 	}
 }
 
@@ -54,6 +56,22 @@ func loadGlobalConfig(path string) *GlobalConfig {
 	}
 	if dm := yamlStr(m, "default_model"); dm != "" {
 		cfg.DefaultModel = dm
+	}
+	if agent, ok := m["agent"].(map[string]any); ok {
+		cfg.Agent.Enabled = yamlBool(agent, "enabled", false)
+		if ac, ok := agent["allow_commands"].([]any); ok {
+			cfg.Agent.AllowCommands = nil
+			for _, c := range ac {
+				cfg.Agent.AllowCommands = append(cfg.Agent.AllowCommands, toStr(c))
+			}
+		}
+		if t := yamlInt(agent, "timeout_seconds", 0); t > 0 {
+			cfg.Agent.TimeoutSeconds = t
+		}
+		if mo := yamlInt(agent, "max_output_bytes", 0); mo > 0 {
+			cfg.Agent.MaxOutputBytes = mo
+		}
+		cfg.Agent.WorkDir = yamlStr(agent, "work_dir")
 	}
 	return cfg
 }

@@ -26,3 +26,17 @@ aliases:
 
 # 未指定 model 时使用的默认模型
 default_model: deepseek/deepseek-chat
+
+# Agent 命令执行（可选，高风险，默认关闭）：
+# 开启后，模型可通过 POST /v1/agent/run 在安全约束下执行宿主系统命令。
+agent:
+  enabled: false
+  # 允许执行的可执行文件名白名单（忽略大小写、路径与扩展名）。
+  allow_commands:
+    - cmd
+    - powershell
+    - ping
+    - ipconfig
+  timeout_seconds: 30      # 单条命令超时（秒）
+  max_output_bytes: 65536  # stdout/stderr 输出上限（字节）
+  # work_dir: ""           # 工作目录（空 = 引擎工作目录）
