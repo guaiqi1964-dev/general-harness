@@ -63,7 +63,7 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-Setup-0.2.1.exe`, double-click and follow the wizard:
+Download `General-Harness-Setup-0.2.2.exe`, double-click and follow the wizard:
 
 - Custom installation location (default: `%ProgramFiles%\General Harness`);
 - The installer bundles everything needed (engine binary, config, GUI, sample models);
@@ -72,7 +72,7 @@ Download `General-Harness-Setup-0.2.1.exe`, double-click and follow the wizard:
 
 ### Option 2: Portable ZIP
 
-Download `General-Harness-v0.2.1.zip` and extract it to any directory — no installation needed. The engine is a single zero-dependency file; double-click `start.bat` or run `bin\gh_upx.exe` directly.
+Download `General-Harness-v0.2.2.zip` and extract it to any directory — no installation needed. The engine is a single zero-dependency file; double-click `start.bat` or run `bin\gh_upx.exe` directly.
 
 ### One-Click Scripts
 
