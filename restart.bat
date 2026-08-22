@@ -19,7 +19,7 @@ for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTP_PROXY 2^>nul') d
 echo =============================================
 echo   General Harness - One-click Restart
 echo   Port: %PORT%    Mode: %MODE%
-echo   API Key: %DEEPSEEK_API_KEY:~0,6%... (from registry)
+if defined DEEPSEEK_API_KEY (echo   API Key: 已配置 (from registry)) else (echo   API Key: 未配置)
 echo =============================================
 
 echo [STOP] Stopping old engine...
@@ -33,8 +33,11 @@ if exist "%CD%\gateway.pid" (
 )
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% .*LISTENING"') do (
     if not "%%p"=="0" (
-        echo [STOP] Killing port %PORT% owner PID %%p
-        taskkill /F /PID %%p >nul 2>&1
+        tasklist /fi "PID eq %%p" /fo csv /nh 2>nul | findstr /i "gh_upx.exe gh.exe" >nul
+        if not errorlevel 1 (
+            echo [STOP] Killing port %PORT% owner PID %%p
+            taskkill /F /PID %%p >nul 2>&1
+        )
     )
 )
 timeout /t 1 /nobreak >nul

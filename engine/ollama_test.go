@@ -9,8 +9,8 @@ func TestStreamChatOllamaFinalDone(t *testing.T) {
 	p := &Provider{Name: "fake", BaseURL: "http://x", Keys: []APIKey{{Name: "default", Key: "sk"}}}
 	p.Models = []string{"fake-model"}
 	p.StreamHandler = func(p *Provider, model string, messages []map[string]any,
-		keySelector string, temperature *float64, maxTokens *int,
-		onChunk func(map[string]any) error) error {
+		keySelector string, temperature *float64, maxTokens *int, topP *float64,
+		streamOptions map[string]any, onChunk func(map[string]any) error) error {
 		if err := onChunk(map[string]any{"id": "s1", "content": "你"}); err != nil {
 			return err
 		}

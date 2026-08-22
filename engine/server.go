@@ -40,11 +40,13 @@ func newEngine(cfg *GlobalConfig, root string) *Engine {
 	return engine
 }
 
+func isLoopbackHost(h string) bool {
+	return h == "" || h == "127.0.0.1" || h == "localhost" || h == "::1"
+}
+
 func runServer(args []string) {
 	cfg := loadGlobalConfig(ROOT + "/config.yaml")
-	if cfg.GatewayAPIKey == "" {
-		fmt.Fprintln(os.Stderr, "警告：未配置 gateway_api_key，网关鉴权已关闭；对外暴露（host=0.0.0.0）时存在未授权调用风险。")
-	}
+	allowInsecure := false
 	// 命令行覆盖 host/port
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -58,7 +60,18 @@ func runServer(args []string) {
 				cfg.Port, _ = strconv.Atoi(args[i+1])
 				i++
 			}
+		case "--allow-insecure":
+			allowInsecure = true
 		}
+	}
+	// 监听非回环地址且未配置网关鉴权时拒绝启动，避免未授权访问（agent 等高危接口同样受此保护）。
+	if !isLoopbackHost(cfg.Host) && cfg.GatewayAPIKey == "" && !allowInsecure {
+		fmt.Fprintln(os.Stderr, "错误：监听非回环地址（"+cfg.Host+"）但未配置 gateway_api_key，存在未授权访问风险，已拒绝启动。")
+		fmt.Fprintln(os.Stderr, "请设置 gateway_api_key，或仅在受信任网络显式使用 --allow-insecure 放行。")
+		os.Exit(1)
+	}
+	if cfg.GatewayAPIKey == "" {
+		fmt.Fprintln(os.Stderr, "警告：未配置 gateway_api_key，网关鉴权已关闭（仅建议本机使用）。")
 	}
 	engine := newEngine(cfg, ROOT)
 	addr := cfg.Host + ":" + itoa(cfg.Port)
@@ -224,6 +237,18 @@ func (e *Engine) handleModels(req *httpRequest, w *responseWriter) {
 
 // ---- 聊天补全 ----
 
+// mergeStreamOptions 合并客户端 stream_options 与 include_usage（流式记账必需）。
+func mergeStreamOptions(clientOpts map[string]any) map[string]any {
+	opts := map[string]any{}
+	if clientOpts != nil {
+		for k, v := range clientOpts {
+			opts[k] = v
+		}
+	}
+	opts["include_usage"] = true
+	return opts
+}
+
 type chatRequestBody struct {
 	Model       string            `json:"model"`
 	Messages    []map[string]any  `json:"messages"`
@@ -292,7 +317,7 @@ func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
 		w.SSE()
 		recorded := false
 		err := provider.streamChatCompletion(actual, body.Messages, keySelector,
-			body.Temperature, body.MaxTokens,
+			body.Temperature, body.MaxTokens, body.TopP, mergeStreamOptions(body.StreamOpts),
 			func(chunk map[string]any) error {
 				if !recorded {
 					if usage, ok := chunk["usage"].(map[string]any); ok && usage != nil {
@@ -323,7 +348,7 @@ func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
 	}
 
 	resp, err := provider.chatCompletion(actual, body.Messages, keySelector,
-		body.Temperature, body.MaxTokens)
+		body.Temperature, body.MaxTokens, body.TopP, body.StreamOpts)
 	if err != nil {
 		writeEngineError(w, err)
 		return
@@ -502,6 +527,11 @@ func parseLimit(raw string) (int, error) {
 	return 0, fmt.Errorf("无效的 limit: %s", raw)
 }
 
+// ollamaError 以结构化错误格式返回（与 /v1/* 保持一致）。
+func ollamaError(w *responseWriter, status int, msg string) {
+	w.JSON(status, map[string]any{"error": map[string]any{"message": msg, "type": "api_error", "code": status}})
+}
+
 // ---- Ollama 兼容端点 ----
 
 func (e *Engine) handleOllamaTags(req *httpRequest, w *responseWriter) {
@@ -510,7 +540,7 @@ func (e *Engine) handleOllamaTags(req *httpRequest, w *responseWriter) {
 		return
 	}
 	if !e.checkAuth(req) {
-		w.JSON(401, map[string]any{"error": "unauthorized"})
+		ollamaError(w, 401, "unauthorized")
 		return
 	}
 	w.JSON(200, e.Ollama.listModels())
@@ -525,16 +555,16 @@ type ollamaChatBody struct {
 
 func (e *Engine) handleOllamaChat(req *httpRequest, w *responseWriter) {
 	if req.Method != "POST" {
-		w.JSON(405, map[string]any{"error": "method not allowed"})
+		ollamaError(w, 405, "method not allowed")
 		return
 	}
 	if !e.checkAuth(req) {
-		w.JSON(401, map[string]any{"error": "unauthorized"})
+		ollamaError(w, 401, "unauthorized")
 		return
 	}
 	var body ollamaChatBody
 	if err := jsonBody(req, &body); err != nil {
-		w.JSON(400, map[string]any{"error": "bad request"})
+		ollamaError(w, 400, "bad request")
 		return
 	}
 	keySelector := req.Headers["x-gateway-api-key"]
@@ -545,7 +575,9 @@ func (e *Engine) handleOllamaChat(req *httpRequest, w *responseWriter) {
 				w.SSEEvent(mustJSON(block))
 				return nil
 			})
-		_ = err
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Ollama 流式错误:", err)
+		}
 		w.Close()
 		return
 	}
@@ -566,16 +598,16 @@ type ollamaGenerateBody struct {
 
 func (e *Engine) handleOllamaGenerate(req *httpRequest, w *responseWriter) {
 	if req.Method != "POST" {
-		w.JSON(405, map[string]any{"error": "method not allowed"})
+		ollamaError(w, 405, "method not allowed")
 		return
 	}
 	if !e.checkAuth(req) {
-		w.JSON(401, map[string]any{"error": "unauthorized"})
+		ollamaError(w, 401, "unauthorized")
 		return
 	}
 	var body ollamaGenerateBody
 	if err := jsonBody(req, &body); err != nil {
-		w.JSON(400, map[string]any{"error": "bad request"})
+		ollamaError(w, 400, "bad request")
 		return
 	}
 	keySelector := req.Headers["x-gateway-api-key"]
@@ -591,7 +623,9 @@ func (e *Engine) handleOllamaGenerate(req *httpRequest, w *responseWriter) {
 				}
 				return nil
 			})
-		_ = err
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Ollama 流式错误:", err)
+		}
 		w.Close()
 		return
 	}
@@ -615,7 +649,7 @@ func (e *Engine) handleGGUFInfo(req *httpRequest, w *responseWriter) {
 		return
 	}
 	if !e.checkAuth(req) {
-		w.JSON(401, map[string]any{"error": "unauthorized"})
+		ollamaError(w, 401, "unauthorized")
 		return
 	}
 	name := strings.TrimPrefix(req.Path, "/api/gguf/")

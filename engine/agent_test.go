@@ -21,6 +21,13 @@ func TestAgentAllowed(t *testing.T) {
 	if a.allowed("notallowed") {
 		t.Error("notallowed should be denied")
 	}
+	// 万能壳即使在白名单中也被硬性拦截（RCE 防护）。
+	if !blockedShell("cmd") || !blockedShell("powershell.exe") {
+		t.Error("shells should be hard-blocked regardless of whitelist")
+	}
+	if blockedShell("ping") {
+		t.Error("ping should not be blocked")
+	}
 }
 
 func TestAgentDisabled(t *testing.T) {
@@ -38,13 +45,13 @@ func TestAgentNotAllowed(t *testing.T) {
 }
 
 func TestAgentRunEcho(t *testing.T) {
-	a := newAgentExecutor(&AgentConfig{Enabled: true, AllowCommands: []string{"cmd"}, TimeoutSeconds: 30, MaxOutputBytes: 65536})
-	res, err := a.Run("cmd", []string{"/c", "echo hello"}, 0)
+	a := newAgentExecutor(&AgentConfig{Enabled: true, AllowCommands: []string{"ipconfig"}, TimeoutSeconds: 30, MaxOutputBytes: 65536})
+	res, err := a.Run("ipconfig", nil, 0)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if !strings.Contains(res.Stdout, "hello") {
-		t.Errorf("stdout = %q, want contains hello", res.Stdout)
+	if !strings.Contains(strings.ToLower(res.Stdout), "ip") {
+		t.Errorf("stdout = %q, want contains IP", res.Stdout)
 	}
 	if res.ExitCode != 0 {
 		t.Errorf("exit = %d, want 0", res.ExitCode)
@@ -52,9 +59,9 @@ func TestAgentRunEcho(t *testing.T) {
 }
 
 func TestAgentTimeout(t *testing.T) {
-	a := newAgentExecutor(&AgentConfig{Enabled: true, AllowCommands: []string{"powershell"}, TimeoutSeconds: 1})
+	a := newAgentExecutor(&AgentConfig{Enabled: true, AllowCommands: []string{"ping"}, TimeoutSeconds: 1})
 	start := time.Now()
-	res, err := a.Run("powershell", []string{"-Command", "Start-Sleep 5"}, 0)
+	res, err := a.Run("ping", []string{"-n", "10", "127.0.0.1"}, 0)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -67,9 +74,8 @@ func TestAgentTimeout(t *testing.T) {
 }
 
 func TestAgentOutputTruncation(t *testing.T) {
-	a := newAgentExecutor(&AgentConfig{Enabled: true, AllowCommands: []string{"cmd"}, MaxOutputBytes: 32})
-	long := strings.Repeat("a", 100)
-	res, err := a.Run("cmd", []string{"/c", "echo " + long}, 0)
+	a := newAgentExecutor(&AgentConfig{Enabled: true, AllowCommands: []string{"ipconfig"}, MaxOutputBytes: 32})
+	res, err := a.Run("ipconfig", nil, 0)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -99,14 +105,14 @@ func TestRunAgentLoop(t *testing.T) {
 	call := 0
 	p := &Provider{Name: "fake", BaseURL: "http://x", Keys: []APIKey{{Name: "default", Key: "sk"}}}
 	p.Models = []string{"fake-model"}
-	p.ChatHandler = func(p *Provider, model string, messages []map[string]any, keySelector string, temperature *float64, maxTokens *int) (map[string]any, error) {
+	p.ChatHandler = func(p *Provider, model string, messages []map[string]any, keySelector string, temperature *float64, maxTokens *int, topP *float64, streamOptions map[string]any) (map[string]any, error) {
 		call++
 		if call == 1 {
-			return map[string]any{"content": "CMD: cmd /c echo hello"}, nil
+			return map[string]any{"content": "CMD: ipconfig"}, nil
 		}
 		return map[string]any{"content": "任务完成"}, nil
 	}
-	cfg := &GlobalConfig{Host: "127.0.0.1", Port: 8000, RateLimitPerMinute: 0, DefaultModel: "fake/fake-model", Agent: &AgentConfig{Enabled: true, AllowCommands: []string{"cmd"}, TimeoutSeconds: 10}}
+	cfg := &GlobalConfig{Host: "127.0.0.1", Port: 8000, RateLimitPerMinute: 0, DefaultModel: "fake/fake-model", Agent: &AgentConfig{Enabled: true, AllowCommands: []string{"ipconfig"}, TimeoutSeconds: 10}}
 	e := newEngine(cfg, dir)
 	steps := []map[string]any{}
 	answer, err := e.runAgentLoop(p, "fake-model", "", "echo hello", 5, func(s map[string]any) { steps = append(steps, s) })

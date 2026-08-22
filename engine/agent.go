@@ -73,6 +73,26 @@ func (a *AgentExecutor) workDir() string {
 	return "."
 }
 
+// dangerousShells 万能壳/解释器硬黑名单：即使出现在 allow_commands 中也一律拒绝。
+// 允许执行这类程序等于允许执行任意命令（白名单形同虚设），属 RCE 风险。
+var dangerousShells = map[string]bool{
+	"cmd": true, "powershell": true, "pwsh": true, "bash": true, "sh": true,
+	"zsh": true, "cscript": true, "wscript": true, "mshta": true,
+	"rundll32": true, "regsvr32": true, "wmic": true, "certutil": true,
+}
+
+// blockedShell 判断命令是否为被硬性拦截的万能壳/解释器（忽略大小写、路径与扩展名）。
+func blockedShell(command string) bool {
+	base := command
+	if idx := strings.LastIndexAny(base, "/\\"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	if ext := filepath.Ext(base); ext != "" {
+		base = strings.TrimSuffix(base, ext)
+	}
+	return dangerousShells[strings.ToLower(base)]
+}
+
 // allowed 校验可执行文件名是否在白名单中（忽略大小写、路径与扩展名）。
 func (a *AgentExecutor) allowed(command string) bool {
 	if a.cfg == nil || len(a.cfg.AllowCommands) == 0 {
@@ -103,6 +123,9 @@ func (a *AgentExecutor) Run(command string, args []string, timeoutSec int) (*Age
 	}
 	if !a.allowed(command) {
 		return nil, newPluginError("命令不在白名单中: "+command, 403, "permission_error")
+	}
+	if blockedShell(command) {
+		return nil, newPluginError("命令被安全策略拒绝（不允许执行万能壳/解释器）: "+command, 403, "permission_error")
 	}
 	timeout := a.timeout()
 	if timeoutSec > 0 {
@@ -168,6 +191,17 @@ func (b *limitedBuffer) String() string {
 	return string(b.buf)
 }
 
+// isSensitiveEnvName 判断环境变量名是否敏感（API Key / Token / Secret 等）。
+// 采用“下划线分隔单词”级匹配，避免误伤 KEYBOARD_LAYOUT 等仅含 KEY 子串的普通变量。
+func isSensitiveEnvName(upper string) bool {
+	for _, suffix := range []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"} {
+		if strings.HasSuffix(upper, suffix) || strings.Contains(upper, "_"+suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 // sanitizedEnv 返回去除敏感变量后的环境（隔离 API Key / Token 等）。
 func sanitizedEnv() []string {
 	env := os.Environ()
@@ -177,10 +211,7 @@ func sanitizedEnv() []string {
 		if idx := strings.Index(e, "="); idx >= 0 {
 			key = e[:idx]
 		}
-		upper := strings.ToUpper(key)
-		if strings.Contains(upper, "KEY") || strings.Contains(upper, "TOKEN") ||
-			strings.Contains(upper, "SECRET") || strings.Contains(upper, "PASSWORD") ||
-			strings.Contains(upper, "CREDENTIAL") {
+		if isSensitiveEnvName(strings.ToUpper(key)) {
 			continue
 		}
 		out = append(out, e)
@@ -216,7 +247,7 @@ func (e *Engine) runAgentLoop(provider *Provider, actual string, keySelector str
 		{"role": "user", "content": goal},
 	}
 	for step := 0; step < maxSteps; step++ {
-		resp, err := provider.chatCompletion(actual, messages, keySelector, nil, nil)
+		resp, err := provider.chatCompletion(actual, messages, keySelector, nil, nil, nil, nil)
 		if err != nil {
 			return "", err
 		}

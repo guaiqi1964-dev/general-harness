@@ -54,6 +54,7 @@ details.think div { white-space:pre-wrap; color:#a99e8a; }
          border-radius:6px; padding:8px 12px; font-size:14px; resize:none; }
 #status { padding:4px 16px; color:var(--muted); font-size:12px; border-top:1px solid var(--border); }
 button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+#gwkey { width:170px; }
 #usagePanel { margin:0 16px 12px; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 14px; max-height:40vh; overflow-y:auto; }
 #usagePanel .usage-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-weight:bold; }
 #usagePanel .usage-head button { padding:2px 8px; }
@@ -73,6 +74,7 @@ button.active { background:var(--accent); color:#fff; border-color:var(--accent)
   <h1>General Harness</h1>
   <label class="hint">模型</label>
   <select id="model"></select>
+  <input id="gwkey" type="password" placeholder="网关 Key（可选）" title="设置 gateway_api_key 后需填写，保存在本机 localStorage">
   <button id="deep">🧠 深度思考</button>
   <button id="usage">📊 用量</button>
   <button id="refresh">刷新</button>
@@ -104,14 +106,23 @@ button.active { background:var(--accent); color:#fff; border-color:var(--accent)
 const $ = s => document.querySelector(s);
 const chat = $('#chat'), modelSel = $('#model'), input = $('#input');
 const statusEl = $('#status'), sendBtn = $('#send');
-const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody'), usageRange = $('#usageRange'), usageChart = $('#usageChart');
+const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody'), usageRange = $('#usageRange'), usageChart = $('#usageChart'), gwkeyInput = $('#gwkey');
 let history = [];
 let deepThinking = false;
 let sessionId = 'sess-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function gwKey() { return (localStorage.getItem('gwkey') || '').trim(); }
+function authHeaders() {
+  const h = {'Content-Type':'application/json'};
+  const k = gwKey();
+  if (k) h['Authorization'] = 'Bearer ' + k;
+  return h;
+}
 
 async function api(path, opts) {
-  const r = await fetch('/api'+path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
+  opts = opts || {};
+  const headers = Object.assign(authHeaders(), opts.headers || {});
+  const r = await fetch('/api'+path, Object.assign({}, opts, {headers}));
   if (!r.ok) { let m = await r.text(); try { m = JSON.parse(m).error?.message || m; } catch(e){} throw new Error(m); }
   return r.json();
 }
@@ -135,13 +146,17 @@ function toggleDeep() {
     else statusEl.textContent = '深度思考已关闭';
   }
 }
-function loadChart() {
-  usageChart.src = '/usage_chart?time_range=' + encodeURIComponent(usageRange.value);
+async function loadChart() {
+  try {
+    const r = await fetch('/usage_chart?time_range=' + encodeURIComponent(usageRange.value), {headers: authHeaders()});
+    const svg = await r.text();
+    usageChart.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  } catch(e) { /* 图表加载失败时保持空白 */ }
 }
 async function loadUsage() {
   loadChart();
   try {
-    const r = await fetch('/v1/usage/stats?limit=20');
+    const r = await fetch('/v1/usage/stats?limit=20', {headers: authHeaders()});
     if (!r.ok) throw new Error('请求失败');
     const d = await r.json();
     const rows = (d.data || []).map(item => {
@@ -178,7 +193,7 @@ async function send() {
   try {
     const r = await fetch('/v1/chat/completions', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: authHeaders(),
       body: JSON.stringify({model: modelSel.value, messages: history.concat([{role:'user',content:text}]), stream: true, stream_options: {include_usage: true}, session_id: sessionId})
     });
     if (!r.ok || !r.body) throw new Error('请求失败');
@@ -226,6 +241,8 @@ $('#deep').onclick = toggleDeep;
 $('#usage').onclick = loadUsage;
 $('#usageClose').onclick = () => { usagePanel.hidden = true; };
 $('#usageRange').onchange = loadChart;
+gwkeyInput.value = localStorage.getItem('gwkey') || '';
+gwkeyInput.onchange = () => { localStorage.setItem('gwkey', gwkeyInput.value.trim()); loadModels(); if (!usagePanel.hidden) loadUsage(); };
 input.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
@@ -372,10 +389,13 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
 
-    def _render_usage_svg(self, time_range: str) -> str:
+    def _render_usage_svg(self, time_range: str, auth: str = "") -> str:
         url = "%s/v1/usage/stats?time_range=%s" % (self._engine(), quote(time_range))
         try:
-            with urlopen(url, timeout=30) as resp:
+            req = Request(url)
+            if auth:
+                req.add_header("Authorization", auth)
+            with urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             return build_usage_svg(data.get("data", []))
         except HTTPError as e:
@@ -386,7 +406,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def _usage_chart(self, path: str) -> None:
         qs = parse_qs(urlparse(path).query)
         time_range = (qs.get("time_range") or ["1h"])[0]
-        svg = self._render_usage_svg(time_range)
+        auth = self.headers.get("Authorization", "")
+        svg = self._render_usage_svg(time_range, auth)
         body = svg.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "image/svg+xml; charset=utf-8")

@@ -27,7 +27,7 @@ echo   General Harness - One-click Start
 echo   Engine: %ENGINE%
 echo   Port:   %PORT%
 echo   Mode:   %MODE%
-echo   API Key: %DEEPSEEK_API_KEY:~0,6%... (from registry)
+if defined DEEPSEEK_API_KEY (echo   API Key: 已配置 (from registry)) else (echo   API Key: 未配置)
 echo =============================================
 
 call :check_health

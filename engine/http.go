@@ -114,6 +114,8 @@ func statusText(code int) string {
 		return "Not Found"
 	case 405:
 		return "Method Not Allowed"
+	case 413:
+		return "Payload Too Large"
 	case 429:
 		return "Too Many Requests"
 	case 500:
@@ -124,6 +126,15 @@ func statusText(code int) string {
 }
 
 const maxConcurrentConns = 1000
+const maxBodyBytes = 16 * 1024 * 1024
+
+type errRequestTooLarge struct{}
+
+func (errRequestTooLarge) Error() string { return "request body too large" }
+
+type errBadRequest struct{ msg string }
+
+func (e errBadRequest) Error() string { return e.msg }
 
 func serve(listener net.Listener, handler httpHandler) {
 	sem := make(chan struct{}, maxConcurrentConns)
@@ -147,6 +158,7 @@ func handleConn(conn net.Conn, handler httpHandler) {
 	for {
 		req, err := readRequest(reader)
 		if err != nil {
+			writeRequestError(conn, err)
 			return
 		}
 		req.RemoteAddr = conn.RemoteAddr().String()
@@ -156,6 +168,24 @@ func handleConn(conn net.Conn, handler httpHandler) {
 			return // 短连接：响应后关闭
 		}
 	}
+}
+
+// writeRequestError 对可识别的请求解析错误写结构化响应（超长请求体 → 413）。
+func writeRequestError(conn net.Conn, err error) {
+	var status int
+	var msg string
+	switch e := err.(type) {
+	case errRequestTooLarge:
+		status, msg = 413, "请求体过大（上限 16MB）"
+	case errBadRequest:
+		status, msg = 400, e.msg
+	default:
+		return // 客户端中断等：直接关闭连接
+	}
+	w := &responseWriter{conn: conn}
+	w.JSON(status, map[string]any{
+		"error": map[string]any{"message": msg, "type": "invalid_request_error", "code": status},
+	})
 }
 
 func readRequest(reader *bufio.Reader) (*httpRequest, error) {
@@ -188,8 +218,14 @@ func readRequest(reader *bufio.Reader) (*httpRequest, error) {
 	}
 	body := []byte{}
 	if cl, ok := headers["content-length"]; ok && cl != "" {
-		n, _ := strconv.Atoi(cl)
-		if n > 0 && n < 16*1024*1024 {
+		n, aerr := strconv.Atoi(cl)
+		if aerr != nil || n < 0 {
+			return nil, errBadRequest{msg: "非法 Content-Length: " + cl}
+		}
+		if n > maxBodyBytes {
+			return nil, errRequestTooLarge{}
+		}
+		if n > 0 {
 			buf := make([]byte, n)
 			if _, err := ioReadFull(reader, buf); err != nil {
 				return nil, err

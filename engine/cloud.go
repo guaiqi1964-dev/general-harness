@@ -80,36 +80,60 @@ func postJSON(url string, headers map[string]string, payload any) (map[string]an
 	return nil, lastErr
 }
 
-// postStream 流式 POST，逐行回调。
+// postStream 流式 POST，逐行回调。连接错误与 429/5xx 会重试（最多 3 次）；
+// 流式响应一旦开始（收到 200），中途失败不再重试，避免重复输出。
 func postStream(url string, headers map[string]string, payload any,
 	onLine func(string) error) (int, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return 0, err
 	}
-	req, err := buildRequest("POST", url, headers, data)
-	if err != nil {
-		return 0, err
-	}
-	client := &netClient{timeout: readTimeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "上游连接错误:", err)
-		return 0, newPluginError("上游连接错误，请稍后重试", 502, "upstream_error")
-	}
-	defer resp.Body.Close()
-	if resp.Status >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return resp.Status, mapStatusError(resp.Status, body)
-	}
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		if err := onLine(scanner.Text()); err != nil {
-			return resp.Status, err
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		req, err := buildRequest("POST", url, headers, data)
+		if err != nil {
+			return 0, err
 		}
+		client := &netClient{timeout: readTimeout}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = newPluginError("上游连接错误，请稍后重试", 502, "upstream_error")
+			if attempt < 2 {
+				time.Sleep(retryDelay("", attempt))
+				continue
+			}
+			return 0, lastErr
+		}
+		if resp.Status >= 400 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			pe := mapStatusError(resp.Status, body)
+			if pe.StatusCode == 429 || pe.StatusCode >= 500 {
+				lastErr = pe
+				if attempt < 2 {
+					time.Sleep(retryDelay(resp.Headers["retry-after"], attempt))
+					continue
+				}
+				return resp.Status, pe
+			}
+			return resp.Status, pe
+		}
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			if err := onLine(scanner.Text()); err != nil {
+				resp.Body.Close()
+				return resp.Status, err
+			}
+		}
+		scanErr := scanner.Err()
+		resp.Body.Close()
+		return resp.Status, scanErr
 	}
-	return resp.Status, scanner.Err()
+	if lastErr == nil {
+		lastErr = fmt.Errorf("上游流式请求失败")
+	}
+	return 0, lastErr
 }
 
 func doPost(url string, headers map[string]string, body []byte) ([]byte, int, string, error) {
@@ -645,7 +669,7 @@ func chunkToUnifiedResponse(chunk map[string]any) map[string]any {
 // ---- 云端补全（Provider 方法） ----
 
 func (p *Provider) buildPayload(model string, messages []map[string]any, stream bool,
-	temperature *float64, maxTokens *int, streamOptions map[string]any) map[string]any {
+	temperature *float64, maxTokens *int, topP *float64, streamOptions map[string]any) map[string]any {
 	payload := map[string]any{
 		"model":    model,
 		"messages": messages,
@@ -656,6 +680,9 @@ func (p *Provider) buildPayload(model string, messages []map[string]any, stream 
 	}
 	if maxTokens != nil {
 		payload["max_tokens"] = *maxTokens
+	}
+	if topP != nil {
+		payload["top_p"] = *topP
 	}
 	if stream && streamOptions != nil {
 		payload["stream_options"] = streamOptions
@@ -671,9 +698,10 @@ func (p *Provider) headers(key APIKey) map[string]string {
 }
 
 func (p *Provider) chatCompletion(model string, messages []map[string]any,
-	keySelector string, temperature *float64, maxTokens *int) (map[string]any, error) {
+	keySelector string, temperature *float64, maxTokens *int, topP *float64,
+	streamOptions map[string]any) (map[string]any, error) {
 	if p.ChatHandler != nil {
-		return p.ChatHandler(p, model, messages, keySelector, temperature, maxTokens)
+		return p.ChatHandler(p, model, messages, keySelector, temperature, maxTokens, topP, streamOptions)
 	}
 	if err := p.validate(); err != nil {
 		return nil, err
@@ -682,7 +710,7 @@ func (p *Provider) chatCompletion(model string, messages []map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	payload := p.buildPayload(model, messages, false, temperature, maxTokens, nil)
+	payload := p.buildPayload(model, messages, false, temperature, maxTokens, topP, streamOptions)
 	data, err := postJSON(p.BaseURL+"/chat/completions", p.headers(selected), payload)
 	if err != nil {
 		return nil, err
@@ -691,10 +719,10 @@ func (p *Provider) chatCompletion(model string, messages []map[string]any,
 }
 
 func (p *Provider) streamChatCompletion(model string, messages []map[string]any,
-	keySelector string, temperature *float64, maxTokens *int,
-	onChunk func(map[string]any) error) error {
+	keySelector string, temperature *float64, maxTokens *int, topP *float64,
+	streamOptions map[string]any, onChunk func(map[string]any) error) error {
 	if p.StreamHandler != nil {
-		return p.StreamHandler(p, model, messages, keySelector, temperature, maxTokens, onChunk)
+		return p.StreamHandler(p, model, messages, keySelector, temperature, maxTokens, topP, streamOptions, onChunk)
 	}
 	if err := p.validate(); err != nil {
 		return err
@@ -703,8 +731,7 @@ func (p *Provider) streamChatCompletion(model string, messages []map[string]any,
 	if err != nil {
 		return err
 	}
-	payload := p.buildPayload(model, messages, true, temperature, maxTokens,
-		map[string]any{"include_usage": true})
+	payload := p.buildPayload(model, messages, true, temperature, maxTokens, topP, streamOptions)
 	streamID := ""
 	_, err = postStream(p.BaseURL+"/chat/completions", p.headers(selected), payload,
 		func(line string) error {

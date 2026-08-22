@@ -51,7 +51,7 @@ func (o *OllamaAdapter) chatOllama(model string, messages []map[string]any,
 		return nil, err
 	}
 	resp, err := provider.chatCompletion(actual, messages, keySelector,
-		optFloat(options, "temperature"), optInt(options, "num_predict"))
+		optFloat(options, "temperature"), optInt(options, "num_predict"), nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (o *OllamaAdapter) streamChatOllama(model string, messages []map[string]any
 		return err
 	}
 	err = provider.streamChatCompletion(actual, messages, keySelector,
-		optFloat(options, "temperature"), optInt(options, "num_predict"),
+		optFloat(options, "temperature"), optInt(options, "num_predict"), nil, nil,
 		func(chunk map[string]any) error {
 			if c, ok := chunk["content"].(string); ok && c != "" {
 				return emit(map[string]any{"message": map[string]any{"role": "assistant", "content": c}, "done": false})

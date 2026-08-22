@@ -84,6 +84,12 @@ func runCLI() {
 
 // streamCLI 流式对话：思考段（reasoning_content）灰色斜体折叠，正文青色。
 func streamCLI(engine *Engine, model string, messages []map[string]any, sessionID string) string {
+	// 本地 GGUF 模型：直接输出固定回复（与 HTTP 路径一致）。
+	if r := engine.GGUF.get(localName(model)); r != nil {
+		reply := localGGUFReply(r)
+		fmt.Println(ansiCyan + reply + ansiReset)
+		return reply
+	}
 	provider, actual, err := engine.Cloud.resolve(model, engine.Config.Aliases)
 	if err != nil {
 		fmt.Println(ansiRed + "✗ " + err.Error() + ansiReset)
@@ -99,7 +105,7 @@ func streamCLI(engine *Engine, model string, messages []map[string]any, sessionI
 	var full strings.Builder
 	thinking := false
 
-	err = provider.streamChatCompletion(actual, messages, "", nil, nil,
+	err = provider.streamChatCompletion(actual, messages, "", nil, nil, nil, nil,
 		func(chunk map[string]any) error {
 			// 记账：流式块携带 usage 时记录（与 HTTP 路径一致）。
 			if !recorded {

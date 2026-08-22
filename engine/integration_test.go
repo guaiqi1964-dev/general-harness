@@ -27,15 +27,16 @@ func startTestServer(t *testing.T) (string, func()) {
 	fake := &Provider{Name: "fake", BaseURL: "http://fake.local", Keys: []APIKey{{Name: "default", Key: "sk-test"}}}
 	fake.Models = []string{"fake-model"}
 	fake.ChatHandler = func(p *Provider, model string, messages []map[string]any,
-		keySelector string, temperature *float64, maxTokens *int) (map[string]any, error) {
+		keySelector string, temperature *float64, maxTokens *int, topP *float64,
+		streamOptions map[string]any) (map[string]any, error) {
 		return map[string]any{
 			"id": "mock", "content": "pong", "model": model,
 			"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
 		}, nil
 	}
 	fake.StreamHandler = func(p *Provider, model string, messages []map[string]any,
-		keySelector string, temperature *float64, maxTokens *int,
-		onChunk func(map[string]any) error) error {
+		keySelector string, temperature *float64, maxTokens *int, topP *float64,
+		streamOptions map[string]any, onChunk func(map[string]any) error) error {
 		// 模拟真实 DeepSeek：首个块 usage:null（经 parseUsage 变为类型化 nil map）
 		if err := onChunk(map[string]any{"id": "s1", "content": "你", "usage": parseUsage(map[string]any{"usage": nil})}); err != nil {
 			return err

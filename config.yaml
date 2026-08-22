@@ -35,11 +35,15 @@ default_model: deepseek/deepseek-chat
 agent:
   enabled: false
   # 允许执行的可执行文件名白名单（忽略大小写、路径与扩展名）。
+  # 安全提示：禁止把 cmd/powershell 等万能壳加入白名单（引擎层已强制拦截）。
   allow_commands:
-    - cmd
-    - powershell
     - ping
     - ipconfig
+    - tasklist
+    - netstat
+    - systeminfo
+    - echo
+    - findstr
   timeout_seconds: 30      # 单条命令超时（秒）
   max_output_bytes: 65536  # stdout/stderr 输出上限（字节）
   # work_dir: ""           # 工作目录（空 = 引擎工作目录）

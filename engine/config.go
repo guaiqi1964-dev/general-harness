@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,6 +36,7 @@ func loadGlobalConfig(path string) *GlobalConfig {
 	cfg := defaultGlobalConfig()
 	m, err := loadYAMLFile(path)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "警告：config.yaml 解析失败，已回退默认配置（host=127.0.0.1/port=8000/agent 关闭）：", err)
 		return cfg
 	}
 	if srv, ok := m["server"].(map[string]any); ok {
@@ -90,10 +92,11 @@ type Provider struct {
 	Keys       []APIKey
 	// 可替换的调用实现（默认走 postJSON/postStream；测试可注入桩）。
 	ChatHandler   func(p *Provider, model string, messages []map[string]any,
-		keySelector string, temperature *float64, maxTokens *int) (map[string]any, error)
+		keySelector string, temperature *float64, maxTokens *int, topP *float64,
+		streamOptions map[string]any) (map[string]any, error)
 	StreamHandler func(p *Provider, model string, messages []map[string]any,
-		keySelector string, temperature *float64, maxTokens *int,
-		onChunk func(map[string]any) error) error
+		keySelector string, temperature *float64, maxTokens *int, topP *float64,
+		streamOptions map[string]any, onChunk func(map[string]any) error) error
 }
 
 // APIKey 一把云端 Key。
@@ -138,6 +141,9 @@ func (p *Provider) defaultKey() APIKey {
 		if k.Key != "" {
 			return k
 		}
+	}
+	if len(p.Keys) == 0 {
+		return APIKey{}
 	}
 	return p.Keys[0]
 }
