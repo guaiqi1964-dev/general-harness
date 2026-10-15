@@ -47,3 +47,55 @@ agent:
   timeout_seconds: 30      # 单条命令超时（秒）
   max_output_bytes: 65536  # stdout/stderr 输出上限（字节）
   # work_dir: ""           # 工作目录（空 = 引擎工作目录）
+
+# 联网搜索（可选，默认关闭）：
+# 开启后 /v1/search、/v1/search/backends 生效，chat 请求可带 web_search 字段注入检索结果。
+# 隐私红线：用户问题原文绝不外发。默认 query_mode=keywords 由引擎本地提取检索词；
+# 可选 query_mode=rewrite 改为调用 rewrite_model 指定的自有模型生成检索式（不提供 raw 模式）。
+search:
+  enabled: false
+  backend: searxng          # 默认后端名（对应下面 backends 中的键）
+  query_mode: keywords      # keywords（本地提取，默认）| rewrite（调自有模型改写）
+  # rewrite_model: deepseek/deepseek-chat   # query_mode=rewrite 时使用的自有厂商模型
+  max_results: 5            # 单次检索返回条数上限（请求可用 max_results 覆盖，硬上限 20）
+  timeout_seconds: 10       # 单次检索超时（秒）
+  inject_budget_chars: 4000 # 注入到对话上下文的检索资料总字符预算
+  cache_ttl_seconds: 300    # 检索结果缓存 TTL（秒），0 表示不缓存
+  max_concurrent: 8         # 同时进行的检索上限（超出返回 429）
+  fetch_content: false      # 默认只注入摘要；true 表示抓取命中网页正文
+  fetch:
+    max_pages: 3            # 正文模式最多抓取几页
+    max_chars_per_page: 4000
+    timeout_seconds: 8
+    user_agent: GeneralHarness/0.3
+    allow_private_hosts: false  # 安全开关：禁止抓取回环/私网/链路本地地址（SSRF 防护）
+  backends:
+    # http_json 适配器：自建 SearXNG（需在 settings.yml 中开启 json 格式）
+    searxng:
+      type: http_json
+      base_url: http://127.0.0.1:8888
+      path: /search
+      method: GET
+      query_param: q
+      params:
+        format: json
+      result_path: results
+      map:
+        title: title
+        url: url
+        snippet: content
+        source: engine
+    # 云端搜索 API（如 Tavily）示例：字段映射按各家文档调整，api_key 支持 ${ENV_VAR}
+    # tavily:
+    #   type: http_json
+    #   base_url: https://api.tavily.com
+    #   path: /search
+    #   method: POST
+    #   headers:
+    #     Authorization: Bearer ${TAVILY_API_KEY}
+    #   body: '{"query":"{query}","max_results":{max_results}}'
+    #   result_path: results
+    #   map:
+    #     title: title
+    #     url: url
+    #     snippet: content

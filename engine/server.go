@@ -21,6 +21,7 @@ type Engine struct {
 	Usage  *UsageStore
 	Rate   *RateLimiter
 	Agent  *AgentExecutor
+	Search *searchService
 }
 
 func newEngine(cfg *GlobalConfig, root string) *Engine {
@@ -35,6 +36,7 @@ func newEngine(cfg *GlobalConfig, root string) *Engine {
 		Usage:  usage,
 		Rate:   newRateLimiter(),
 		Agent:  newAgentExecutor(cfg.Agent),
+		Search: newSearchService(cfg.Search),
 	}
 	engine.Ollama = newOllamaAdapter(cloud, gguf, cfg.Aliases)
 	return engine
@@ -115,7 +117,9 @@ func (e *Engine) dispatch(req *httpRequest, w *responseWriter) {
 		if path == "/health" {
 			w.JSON(200, map[string]any{"status": "ok"})
 		} else {
-			w.JSON(200, map[string]any{"service": "General Harness", "docs": "/docs"})
+			// 说明：旧版这里返回 {"docs":"/docs"}，但引擎从未实现 /docs 路由（实测 404），
+			// 属于误导性字段，v0.3.0 起改为只返回服务标识与版本。
+			w.JSON(200, map[string]any{"service": "General Harness", "version": engineVersion})
 		}
 	case path == "/v1/models":
 		e.handleModels(req, w)
@@ -135,6 +139,11 @@ func (e *Engine) dispatch(req *httpRequest, w *responseWriter) {
 		e.handleAgentRun(req, w)
 	case path == "/v1/agent/loop":
 		e.handleAgentLoop(req, w)
+	// 联网搜索：关闭时不注册路由，整体行为与 v0.2.4 一致（未知路径 404）。
+	case path == "/v1/search" && e.Search.enabled():
+		e.handleSearch(req, w)
+	case path == "/v1/search/backends" && e.Search.enabled():
+		e.handleSearchBackends(req, w)
 	case strings.HasPrefix(path, "/api/gguf/"):
 		e.handleGGUFInfo(req, w)
 	default:
@@ -250,14 +259,16 @@ func mergeStreamOptions(clientOpts map[string]any) map[string]any {
 }
 
 type chatRequestBody struct {
-	Model       string            `json:"model"`
-	Messages    []map[string]any  `json:"messages"`
-	Stream      bool              `json:"stream"`
-	Temperature *float64          `json:"temperature"`
-	MaxTokens   *int              `json:"max_tokens"`
-	TopP        *float64          `json:"top_p"`
-	SessionID   string            `json:"session_id"`
-	StreamOpts  map[string]any    `json:"stream_options"`
+	Model       string           `json:"model"`
+	Messages    []map[string]any `json:"messages"`
+	Stream      bool             `json:"stream"`
+	Temperature *float64         `json:"temperature"`
+	MaxTokens   *int             `json:"max_tokens"`
+	TopP        *float64         `json:"top_p"`
+	SessionID   string           `json:"session_id"`
+	StreamOpts  map[string]any   `json:"stream_options"`
+	// WebSearch 为 v0.3.0 增量字段：布尔或对象形态，缺失即旧行为（见 PLAN-v0.3.0.md §7.2）。
+	WebSearch any `json:"web_search"`
 }
 
 func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
@@ -313,8 +324,24 @@ func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
 		return
 	}
 
+	// v0.3.0：可选的联网检索（web_search 缺失时完全不触发，保持旧行为逐字节一致）。
+	searchContext, sources, searchErr := e.prepareWebSearch(body.WebSearch, body.Messages, provider, actual, keySelector)
+	if searchErr != nil {
+		writeEngineError(w, searchErr)
+		return
+	}
+	if searchContext != "" {
+		body.Messages = withSearchContext(body.Messages, searchContext)
+	}
+
 	if body.Stream {
 		w.SSE()
+		// 检索事件块先于正文块；未请求检索时不发送，保持与 v0.2.4 一致的帧序列。
+		if sources != nil {
+			w.SSEEvent(mustJSON(map[string]any{
+				"id": requestID, "phase": "search", "sources": sources, "finish_reason": nil,
+			}))
+		}
 		recorded := false
 		err := provider.streamChatCompletion(actual, body.Messages, keySelector,
 			body.Temperature, body.MaxTokens, body.TopP, mergeStreamOptions(body.StreamOpts),
@@ -358,6 +385,9 @@ func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
 			int(toInt64(usage["prompt_tokens"])),
 			int(toInt64(usage["completion_tokens"])),
 			int(toInt64(usage["total_tokens"])), 0)
+	}
+	if sources != nil {
+		resp["sources"] = sources
 	}
 	w.JSON(200, resp)
 }

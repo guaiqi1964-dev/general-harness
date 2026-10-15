@@ -67,6 +67,16 @@ button.active { background:var(--accent); color:#fff; border-color:var(--accent)
 .usage-range label { color:var(--muted); font-size:12px; white-space:nowrap; }
 #usageChart { width:100%; height:auto; display:block; margin-bottom:10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); }
 .usage-subhead { margin:8px 0 4px; font-weight:bold; color:var(--muted); font-size:12px; }
+.sources { margin-top:10px; border-top:1px solid var(--border); padding-top:8px;
+        display:flex; flex-direction:column; gap:6px; }
+.sources .src-head { color:var(--muted); font-size:12px; }
+a.src { display:flex; gap:8px; align-items:baseline; text-decoration:none; color:var(--fg);
+        background:var(--bg); border:1px solid var(--border); border-radius:6px;
+        padding:6px 10px; font-size:13px; }
+a.src:hover { border-color:var(--accent); }
+a.src .idx { color:var(--accent); }
+a.src .title { flex:1; word-break:break-word; }
+a.src .host { color:var(--muted); font-size:12px; white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -76,6 +86,7 @@ button.active { background:var(--accent); color:#fff; border-color:var(--accent)
   <select id="model"></select>
   <input id="gwkey" type="password" placeholder="网关 Key（可选）" title="设置 gateway_api_key 后需填写，保存在本机 localStorage">
   <button id="deep">🧠 深度思考</button>
+  <button id="web" title="开启后由引擎先做一次联网检索，再把带来源的资料交给模型">🌐 联网</button>
   <button id="usage">📊 用量</button>
   <button id="refresh">刷新</button>
   <button id="clear">清空</button>
@@ -107,10 +118,14 @@ const $ = s => document.querySelector(s);
 const chat = $('#chat'), modelSel = $('#model'), input = $('#input');
 const statusEl = $('#status'), sendBtn = $('#send');
 const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody'), usageRange = $('#usageRange'), usageChart = $('#usageChart'), gwkeyInput = $('#gwkey');
+const webBtn = $('#web');
 let history = [];
 let deepThinking = false;
+let webSearch = localStorage.getItem('websearch') === '1';
+let webNoticeShown = localStorage.getItem('websearchNotice') === '1';
 let sessionId = 'sess-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const escAttr = s => esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function gwKey() { return (localStorage.getItem('gwkey') || '').trim(); }
 function authHeaders() {
   const h = {'Content-Type':'application/json'};
@@ -184,22 +199,74 @@ function addMsg(role, text, thinking) {
   return div;
 }
 function setBusy(b) { sendBtn.disabled = b; input.disabled = b; }
+
+// ---- 联网检索（v0.3.0）：开关状态、隐私提示、来源卡片 ----
+function applyWebSearch() {
+  webBtn.classList.toggle('active', webSearch);
+  webBtn.textContent = webSearch ? '🌐 联网：开' : '🌐 联网';
+}
+function hostOf(u) { try { return new URL(u).host; } catch(e) { return ''; } }
+function sourcesHtml(list) {
+  const items = (list || []).map(s => {
+    const url = String(s.url || ''), host = hostOf(url);
+    return '<a class="src" href="'+escAttr(url)+'" target="_blank" rel="noopener noreferrer">'+
+      '<span class="idx">['+esc(String(s.index==null?'':s.index))+']</span>'+
+      '<span class="title">'+esc(String(s.title || host || url))+'</span>'+
+      '<span class="host">'+esc(host)+'</span></a>';
+  }).join('');
+  if (!items) return '';
+  return '<div class="sources"><div class="src-head">🌐 来源（点击在新窗口打开）</div>'+items+'</div>';
+}
+function renderBubble(bubble, full, think, sources) {
+  let html = '';
+  if (think) html += '<details class="think" open><summary>💭 思考过程</summary><div>'+esc(think)+'</div></details>';
+  html += '<div>'+esc(full)+'</div>';
+  html += sourcesHtml(sources);
+  bubble.innerHTML = html;
+}
+async function toggleWeb() {
+  if (webSearch) {
+    webSearch = false; localStorage.setItem('websearch','0'); applyWebSearch();
+    statusEl.textContent = '联网检索已关闭';
+    return;
+  }
+  // 开启前确认引擎侧已启用且有就绪后端（关闭时路由不注册，返回 404）。
+  try {
+    const r = await fetch('/v1/search/backends', {headers: authHeaders()});
+    if (r.status === 404) { statusEl.textContent = '引擎未启用联网检索（config.yaml 中 search.enabled=false）'; return; }
+    if (!r.ok) { statusEl.textContent = '无法确认搜索后端状态：HTTP ' + r.status; return; }
+    const d = await r.json();
+    const ready = (d.data || []).filter(x => x.ready);
+    if (!ready.length) { statusEl.textContent = '没有就绪的搜索后端，请检查 config.yaml 中的 search.backends'; return; }
+  } catch(e) { statusEl.textContent = '无法连接引擎：' + e.message; return; }
+  webSearch = true; localStorage.setItem('websearch','1'); applyWebSearch();
+  if (!webNoticeShown) {
+    webNoticeShown = true; localStorage.setItem('websearchNotice','1');
+    statusEl.textContent = '联网已开启：只把引擎本地提取的检索词发给搜索服务，不含你的问题原文';
+  } else {
+    statusEl.textContent = '联网检索已开启';
+  }
+}
+
 async function send() {
   const text = input.value.trim();
   if (!text || sendBtn.disabled) return;
-  input.value = ''; setBusy(true); statusEl.textContent = '生成中…';
+  input.value = ''; setBusy(true); statusEl.textContent = webSearch ? '正在检索…' : '生成中…';
   addMsg('user', text);
   const bubble = addMsg('assistant', '');
   try {
+    const payload = {model: modelSel.value, messages: history.concat([{role:'user',content:text}]), stream: true, stream_options: {include_usage: true}, session_id: sessionId};
+    // 未开启联网时请求体与旧版本逐字段一致（G2）。
+    if (webSearch) payload.web_search = true;
     const r = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({model: modelSel.value, messages: history.concat([{role:'user',content:text}]), stream: true, stream_options: {include_usage: true}, session_id: sessionId})
+      body: JSON.stringify(payload)
     });
     if (!r.ok || !r.body) throw new Error('请求失败');
     const reader = r.body.getReader();
     const dec = new TextDecoder();
-    let buf = '', full = '', think = '', inThink = false;
+    let buf = '', full = '', think = '', inThink = false, sources = null;
     bubble.textContent = '';
     while (true) {
       const {done, value} = await reader.read();
@@ -213,6 +280,14 @@ async function send() {
         if (data === '[DONE]') continue;
         let ev; try { ev = JSON.parse(data); } catch(e) { continue; }
         if (ev.error) throw new Error(ev.error.message || '网关错误');
+        // 检索事件块（正文块之前）：先落来源卡片，再继续流式正文。
+        if (ev.phase === 'search') {
+          sources = ev.sources || [];
+          statusEl.textContent = '已检索到 ' + sources.length + ' 条来源，生成中…';
+          renderBubble(bubble, full, think, sources);
+          chat.scrollTop = chat.scrollHeight;
+          continue;
+        }
         // 仅在 thinking 为非空字符串时累加（引擎对无思考的块输出 null，
         // 直接 += 会把 null 转成字符串 "null" 污染思考面板）。
         if (typeof ev.thinking === 'string' && ev.thinking.length > 0) {
@@ -220,12 +295,12 @@ async function send() {
         }
         if (ev.content) { full += ev.content; inThink = false; }
         if (ev.content || think) {
-          bubble.textContent = full;
-          if (think) bubble.innerHTML = '<details class="think" open><summary>💭 思考过程</summary><div>'+esc(think)+'</div></details><div>'+esc(full)+'</div>';
+          renderBubble(bubble, full, think, sources);
           chat.scrollTop = chat.scrollHeight;
         }
       }
     }
+    renderBubble(bubble, full, think, sources);
     history = history.concat([{role:'user',content:text},{role:'assistant',content:full}]);
     statusEl.textContent = '完成';
   } catch(e) {
@@ -238,6 +313,7 @@ $('#send').onclick = send;
 $('#clear').onclick = () => { history = []; chat.innerHTML = ''; sessionId = 'sess-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); };
 $('#refresh').onclick = loadModels;
 $('#deep').onclick = toggleDeep;
+$('#web').onclick = toggleWeb;
 $('#usage').onclick = loadUsage;
 $('#usageClose').onclick = () => { usagePanel.hidden = true; };
 $('#usageRange').onchange = loadChart;
@@ -246,6 +322,7 @@ gwkeyInput.onchange = () => { localStorage.setItem('gwkey', gwkeyInput.value.tri
 input.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
+applyWebSearch();
 loadModels();
 </script>
 </body>
@@ -322,6 +399,8 @@ def build_usage_svg(items) -> str:
 class ProxyHandler(BaseHTTPRequestHandler):
     # 引擎地址在 run_proxy 中注入 server 实例，避免类变量跨实例污染。
     engine_url = DEFAULT_ENGINE
+    # SSE 透传使用 chunked 编码，必须声明 HTTP/1.1（默认 HTTP/1.0 不允许 chunked）。
+    protocol_version = "HTTP/1.1"
 
     def log_message(self, *a):  # 静默访问日志
         pass

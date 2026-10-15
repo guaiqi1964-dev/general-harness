@@ -19,6 +19,7 @@ type GlobalConfig struct {
 	Aliases            map[string]string
 	DefaultModel       string
 	Agent              *AgentConfig
+	Search             *SearchConfig
 }
 
 func defaultGlobalConfig() *GlobalConfig {
@@ -29,6 +30,7 @@ func defaultGlobalConfig() *GlobalConfig {
 		RateLimitPerMinute: 60,
 		DefaultModel:       "deepseek/deepseek-chat",
 		Agent:              &AgentConfig{Enabled: false, TimeoutSeconds: 30, MaxOutputBytes: 65536},
+		Search:             defaultSearchConfig(),
 	}
 }
 
@@ -80,6 +82,7 @@ func loadGlobalConfig(path string) *GlobalConfig {
 		}
 		cfg.Agent.WorkDir = yamlStr(agent, "work_dir")
 	}
+	cfg.Search = parseSearchConfig(m)
 	return cfg
 }
 

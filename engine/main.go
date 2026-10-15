@@ -16,6 +16,9 @@ import (
 
 var ROOT string
 
+// engineVersion 引擎版本号（与 installer.iss、README 中的版本号保持一致）。
+const engineVersion = "0.3.0"
+
 func init() {
 	// 优先使用工作目录（启动脚本 cd 到发行版根目录再运行）；
 	// 若工作目录无 config.yaml，回退到可执行文件所在目录（或其上一级，

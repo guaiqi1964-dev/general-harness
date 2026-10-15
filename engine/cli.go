@@ -1,5 +1,7 @@
-// 终端 CLI 模式：交互对话，ANSI 动态思考过程展示。
-// 支持 /thinking 段（若模型返回 reasoning_content）用彩色 ANSI 显示。
+// 终端 CLI 模式：交互对话。
+// 说明：当前实现只打印思考指示符「…」与正文，不区分展示 reasoning_content
+// （README 曾宣称的彩色思考段折叠尚未实现）。v0.3.0 起支持联网检索：
+// /search on|off|status 会话内开关，/web <query> 单次检索。
 package main
 
 import (
@@ -39,6 +41,8 @@ func runCLI() {
 	sessionID := "cli-" + randHex(6)
 	history := []map[string]any{}
 	model := cfg.DefaultModel
+	webSearch := false
+	privacyNoticeShown := false
 
 	for {
 		fmt.Print(ansiGreen + "你 > " + ansiReset)
@@ -73,32 +77,139 @@ func runCLI() {
 			fmt.Println(ansiDim + "历史已清空" + ansiReset)
 			continue
 		}
+		if text == "/search" || strings.HasPrefix(text, "/search ") {
+			arg := strings.TrimSpace(strings.TrimPrefix(text, "/search"))
+			switch arg {
+			case "", "status":
+				fmt.Println(ansiDim + "联网检索: " + onOff(webSearch) + searchStatusLine(engine) + ansiReset)
+			case "on":
+				if !engine.Search.enabled() {
+					fmt.Println(ansiRed + "✗ 联网检索未启用（config.yaml 中 search.enabled=false）" + ansiReset)
+					break
+				}
+				webSearch = true
+				fmt.Println(ansiGreen + "✓ 联网检索已开启" + ansiReset)
+				if !privacyNoticeShown {
+					privacyNoticeShown = true
+					fmt.Println(ansiDim + "  提示：发送给搜索服务的是本地提取的检索词（" +
+						searchQueryMode(engine) + "），不含你的问题原文。" + ansiReset)
+				}
+			case "off":
+				webSearch = false
+				fmt.Println(ansiDim + "联网检索已关闭" + ansiReset)
+			default:
+				fmt.Println(ansiRed + "✗ 用法: /search [on|off|status]" + ansiReset)
+			}
+			continue
+		}
+		if strings.HasPrefix(text, "/web ") {
+			query := strings.TrimSpace(strings.TrimPrefix(text, "/web "))
+			runCLISearch(engine, query)
+			continue
+		}
 
 		history = append(history, map[string]any{"role": "user", "content": text})
 		fmt.Println(ansiBold + "助手 > " + ansiReset)
-		reply := streamCLI(engine, model, history, sessionID)
+		reply, sources := streamCLI(engine, model, history, sessionID, webSearch)
+		if len(sources) > 0 {
+			printCLISources(sources)
+		}
 		history = append(history, map[string]any{"role": "assistant", "content": reply})
 		fmt.Println()
 	}
 }
 
-// streamCLI 流式对话：思考段（reasoning_content）灰色斜体折叠，正文青色。
-func streamCLI(engine *Engine, model string, messages []map[string]any, sessionID string) string {
+// onOff 开关的中文展示。
+func onOff(b bool) string {
+	if b {
+		return "开"
+	}
+	return "关"
+}
+
+// searchStatusLine 描述当前搜索配置（cfg 缺失时不越界）。
+func searchStatusLine(engine *Engine) string {
+	if engine.Search.cfg == nil {
+		return " · 未配置"
+	}
+	return " · 后端: " + engine.Search.cfg.Backend + " · 检索词模式: " + searchQueryMode(engine)
+}
+
+func searchQueryMode(engine *Engine) string {
+	if engine.Search.cfg == nil || engine.Search.cfg.QueryMode == "" {
+		return "keywords"
+	}
+	return engine.Search.cfg.QueryMode
+}
+
+// printCLISources 打印编号来源。
+func printCLISources(sources []map[string]any) {
+	fmt.Println(ansiDim + "来源:" + ansiReset)
+	for _, s := range sources {
+		fmt.Println(ansiGray + "  [" + toStr(s["index"]) + "] " + toStr(s["title"]) +
+			" — " + toStr(s["url"]) + ansiReset)
+	}
+}
+
+// runCLISearch 单次检索并打印编号来源（不进入对话历史）。
+func runCLISearch(engine *Engine, query string) {
+	if query == "" {
+		fmt.Println(ansiRed + "✗ 用法: /web <检索词>" + ansiReset)
+		return
+	}
+	if !engine.Search.enabled() {
+		fmt.Println(ansiRed + "✗ 联网检索未启用（config.yaml 中 search.enabled=false）" + ansiReset)
+		return
+	}
+	resp, err := engine.Search.Search(searchRequest{Query: query})
+	if err != nil {
+		fmt.Println(ansiRed + "✗ " + err.Error() + ansiReset)
+		return
+	}
+	if len(resp.Results) == 0 {
+		fmt.Println(ansiDim + "没有检索到结果" + ansiReset)
+		return
+	}
+	fmt.Println(ansiDim + "后端 " + resp.Backend + " · " + itoa64(resp.ElapsedMS) + "ms · " +
+		itoa(len(resp.Results)) + " 条结果" + ansiReset)
+	for _, r := range resp.Results {
+		fmt.Println(ansiCyan + "[" + itoa(r.Index) + "] " + r.Title + ansiReset)
+		fmt.Println(ansiGray + "    " + r.URL + ansiReset)
+		if r.Snippet != "" {
+			fmt.Println(ansiDim + "    " + r.Snippet + ansiReset)
+		}
+	}
+}
+
+// streamCLI 流式对话，返回（回答文本, 来源列表）。
+// webSearch 为 true 时先做一次联网检索并把结果注入 system 上下文（与 HTTP 路径同一套逻辑）。
+func streamCLI(engine *Engine, model string, messages []map[string]any, sessionID string, webSearch bool) (string, []map[string]any) {
 	// 本地 GGUF 模型：直接输出固定回复（与 HTTP 路径一致）。
 	if r := engine.GGUF.get(localName(model)); r != nil {
 		reply := localGGUFReply(r)
 		fmt.Println(ansiCyan + reply + ansiReset)
-		return reply
+		return reply, nil
 	}
 	provider, actual, err := engine.Cloud.resolve(model, engine.Config.Aliases)
 	if err != nil {
 		fmt.Println(ansiRed + "✗ " + err.Error() + ansiReset)
-		return ""
+		return "", nil
 	}
 	selected, err := provider.resolveKey("")
 	if err != nil {
 		fmt.Println(ansiRed + "✗ " + err.Error() + ansiReset)
-		return ""
+		return "", nil
+	}
+	if webSearch {
+		fmt.Println(ansiDim + "正在检索…" + ansiReset)
+	}
+	ctx, sources, searchErr := engine.prepareWebSearch(webSearch, messages, provider, actual, "")
+	if searchErr != nil {
+		fmt.Println(ansiRed + "✗ " + searchErr.Error() + ansiReset)
+		return "", nil
+	}
+	if ctx != "" {
+		messages = withSearchContext(messages, ctx)
 	}
 	requestID := "req-" + randHex(6)
 	recorded := false
@@ -135,7 +246,7 @@ func streamCLI(engine *Engine, model string, messages []map[string]any, sessionI
 			fmt.Println(ansiRed + "\n✗ " + pe.Message + ansiReset)
 		}
 	}
-	return full.String()
+	return full.String(), sources
 }
 
 func listCLIModels(engine *Engine) {
@@ -155,6 +266,8 @@ func listCLIModels(engine *Engine) {
 func printCLIHelp() {
 	fmt.Println(ansiDim + "/model <name>  切换模型" + ansiReset)
 	fmt.Println(ansiDim + "/models        列出模型" + ansiReset)
+	fmt.Println(ansiDim + "/search on|off 联网检索开关（status 查看当前状态）" + ansiReset)
+	fmt.Println(ansiDim + "/web <检索词>  单次联网检索并打印编号来源" + ansiReset)
 	fmt.Println(ansiDim + "/clear         清空历史" + ansiReset)
 	fmt.Println(ansiDim + "/exit          退出" + ansiReset)
 }

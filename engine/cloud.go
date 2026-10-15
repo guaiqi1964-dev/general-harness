@@ -557,12 +557,18 @@ func (cr *chunkedReader) skipCRLF() error {
 	return err
 }
 
-// wrapResponseBody 处理 Transfer-Encoding: chunked 与 Content-Encoding: gzip。
+// wrapResponseBody 处理分帧（chunked / Content-Length）与 Content-Encoding: gzip。
+// 说明：上游保持长连接（HTTP/1.1 keep-alive）时不会主动关连接，若只按 EOF 读取，
+// 会一直阻塞到读超时。因此这里必须按 Content-Length 限长，做到读到边界即返回。
 func wrapResponseBody(resp *httpResp) error {
 	base := resp.Body
 	body := io.Reader(base)
 	if strings.Contains(strings.ToLower(resp.Headers["transfer-encoding"]), "chunked") {
 		body = newChunkedReader(body)
+	} else if v, ok := resp.Headers["content-length"]; ok {
+		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n >= 0 {
+			body = io.LimitReader(body, n)
+		}
 	}
 	if strings.ToLower(resp.Headers["content-encoding"]) == "gzip" {
 		gz, err := gzip.NewReader(body)
