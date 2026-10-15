@@ -72,7 +72,7 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-Setup-0.3.0.exe`, double-click and follow the wizard:
+Download `General-Harness-Setup-0.3.0.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
 
 - `DefaultDirName={autopf}\General Harness` combined with `PrivilegesRequired=lowest` means the default install target is **the current user's program directory**, not a machine-wide one;
 - The installer bundles everything needed (engine binary, config, GUI, sample models);
@@ -81,7 +81,7 @@ Download `General-Harness-Setup-0.3.0.exe`, double-click and follow the wizard:
 
 ### Option 2: Build from Source
 
-There is currently **no portable (ZIP) packaging script** in the repository — the setup script `installer.iss`, the launcher scripts, and `go build` are the supported paths. To run without the installer:
+There is currently **no portable (ZIP) packaging script** in the repository — the setup script `installer.iss`, the launcher scripts, and `go build` are the supported paths. As of v0.3.0 the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest) additionally ships a ZIP of the release directory built from the same tree; a ZIP you build yourself is not bound to that file name. To run without the installer:
 
 ```bash
 cd engine

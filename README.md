@@ -78,7 +78,7 @@
 
 ### 方式一：Windows 安装包
 
-运行 `General-Harness-Setup-0.3.0.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
+从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-Setup-0.3.0.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
 
 - 可自选安装目录：脚本中为 `DefaultDirName={autopf}\General Harness`，同时 `PrivilegesRequired=lowest`，因此**无需管理员权限**，实际安装到当前用户的程序目录（约 `%LocalAppData%\Programs\General Harness`），而非全局 `%ProgramFiles%`；
 - 安装包内置引擎二进制、`config.yaml`、启动脚本、GUI、示例 GGUF 与四个厂商插件配置；
@@ -92,7 +92,7 @@
 
 安装包之外，引擎本身是单文件零依赖的：把发行目录整体拷贝到任意位置，双击 `start.bat` 或直接运行 `bin\gh_upx.exe` 即可使用。
 
-> 说明：仓库内**没有**提供绿色包（zip）的打包脚本——`installer.iss` 只产出安装包。所谓 `General-Harness-v0.3.0.zip` 需要自行压缩发行目录得到，本文档不对其文件名作保证。
+> 说明：仓库内**没有**提供绿色包（zip）的打包脚本——`installer.iss` 只产出安装包。自 v0.3.0 起，[Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 会随安装包一并提供发行目录的 zip（如 `General-Harness-v0.3.0.zip`，与安装包同源）；若自行压缩发行目录，文件名不受本仓库约束。
 
 ### 一键启动脚本
 
