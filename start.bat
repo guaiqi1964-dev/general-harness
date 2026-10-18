@@ -27,15 +27,15 @@ echo   General Harness - One-click Start
 echo   Engine: %ENGINE%
 echo   Port:   %PORT%
 echo   Mode:   %MODE%
-if defined DEEPSEEK_API_KEY (echo   API Key: 已配置 (from registry)) else (echo   API Key: 未配置)
+if defined DEEPSEEK_API_KEY (echo   API Key: configured [from registry]) else (echo   API Key: not configured)
 echo =============================================
 
 call :check_health
 if "%HEALTHY%"=="1" (
-    echo [ENGINE] Already running (http://127.0.0.1:%PORT%)
+    echo [ENGINE] Already running - http://127.0.0.1:%PORT%
 ) else (
     echo [ENGINE] Starting...
-    start "General Harness Engine" cmd /k ""%ENGINE%" serve --port %PORT%"
+    start "General Harness Engine" /D "%~dp0" cmd /k ""%ENGINE%" serve --port %PORT%"
     set /a TRY=0
     :wait_loop
     set /a TRY+=1
@@ -44,7 +44,7 @@ if "%HEALTHY%"=="1" (
         pause & exit /b 1
     )
     call :check_health
-    if not "!HEALTHY!"=="1" ( timeout /t 1 /nobreak >nul & goto :wait_loop )
+    if not "!HEALTHY!"=="1" ( ping -n 2 127.0.0.1 >nul & goto :wait_loop )
     echo [ENGINE] Ready at http://127.0.0.1:%PORT%
 )
 
@@ -60,14 +60,31 @@ if "%MODE%"=="cli" (
 )
 
 rem ---- Default mode: Webview GUI ----
+set "GUI_UP=0"
+curl -s -o nul -w "%%{http_code}" --max-time 2 "http://127.0.0.1:8765/" > "%TEMP%\gh_gui.txt" 2>nul
+set /p GUIPROBE=<"%TEMP%\gh_gui.txt"
+if "%GUIPROBE%"=="200" set "GUI_UP=1"
+if "%GUI_UP%"=="1" (
+    echo [MODE] GUI already running at http://127.0.0.1:8765
+    start "" "http://127.0.0.1:8765"
+    exit /b 0
+)
 echo [MODE] Starting Webview GUI...
 python --version >nul 2>&1
+if errorlevel 1 goto :browser_ui
+python -c "import webview" >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Python not found. GUI mode requires Python 3.10+.
-    echo         Try: start.bat cli  ^(terminal^)  or  install Python.
-    pause & exit /b 1
+    echo [WARN] Python found but pywebview is missing.
+    goto :browser_ui
 )
-start "General Harness GUI" cmd /k "cd /d %~dp0 && python gui\gui.py --url http://127.0.0.1:%PORT%"
+start "General Harness GUI" /D "%~dp0" cmd /k python gui\gui.py --url http://127.0.0.1:%PORT%
+exit /b 0
+
+:browser_ui
+rem ---- No Python (or no pywebview): serve the built-in page from the engine ----
+echo [MODE] Python GUI not available - using the built-in browser UI.
+echo        http://127.0.0.1:%PORT%/ui
+start "" "http://127.0.0.1:%PORT%/ui"
 exit /b 0
 
 :check_health

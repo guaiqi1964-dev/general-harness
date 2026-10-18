@@ -2,8 +2,8 @@
 ; Build: ISCC.exe installer.iss
 
 #define MyAppName "General Harness"
-#define MyAppVersion "0.3.0"
-#define MyAppFileVersion "0.3.0.0"
+#define MyAppVersion "0.3.1"
+#define MyAppFileVersion "0.3.1.0"
 #define MyAppPublisher "GQ's Lab"
 #define MyAppExeName "start.bat"
 #define MyAppId "{{8F3B1A2C-5D4E-4A6B-9C7D-1E2F3A4B5C6D}"
@@ -67,7 +67,7 @@ Name: "{autodesktop}\General Harness"; Filename: "{app}\start.bat"; WorkingDir: 
 
 [Run]
 ; Auto-detect Python and install GUI deps (optional; silent failure does not block install)
-Filename: "{cmd}"; Parameters: "/c ""python --version >nul 2>&1 && python -m pip install -r ""{app}\gui\requirements.txt"" -q || echo [General Harness] Python not found, GUI will use browser mode"""; Flags: runhidden; StatusMsg: "Configuring GUI dependency (pywebview)..."
+Filename: "{cmd}"; Parameters: "/c ""python --version >nul 2>&1 && python -m pip install -r ""{app}\gui\requirements.txt"" -q || echo [General Harness] Python not found - the built-in browser UI (/ui) will be used"""; Flags: runhidden; StatusMsg: "Configuring GUI dependency (pywebview)..."
 Filename: "{app}\start.bat"; Description: "Launch General Harness now"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]

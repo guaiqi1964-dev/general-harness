@@ -109,17 +109,25 @@ func (e *Engine) dispatch(req *httpRequest, w *responseWriter) {
 	}
 	path := req.Path
 	// 统一限流（health 与根路径除外）。
-	if path != "/health" && path != "/" && !e.rateLimit(req, w) {
+	// /ui 是静态页面，与 /health、/ 一样豁免限流（否则连续刷新会被 429 挡住）。
+	if path != "/health" && path != "/" && path != "/ui" && !e.rateLimit(req, w) {
 		return
 	}
 	switch {
+	case path == "/ui":
+		e.handleUI(req, w)
 	case path == "/" || path == "/health":
 		if path == "/health" {
 			w.JSON(200, map[string]any{"status": "ok"})
 		} else {
 			// 说明：旧版这里返回 {"docs":"/docs"}，但引擎从未实现 /docs 路由（实测 404），
 			// 属于误导性字段，v0.3.0 起改为只返回服务标识与版本。
-			w.JSON(200, map[string]any{"service": "General Harness", "version": engineVersion})
+			// 本次起补上 ui 字段：无 Python 的机器可直接用浏览器打开内置界面。
+			w.JSON(200, map[string]any{
+				"service": "General Harness",
+				"version": engineVersion,
+				"ui":      "/ui",
+			})
 		}
 	case path == "/v1/models":
 		e.handleModels(req, w)

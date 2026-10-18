@@ -19,7 +19,7 @@ for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTP_PROXY 2^>nul') d
 echo =============================================
 echo   General Harness - One-click Restart
 echo   Port: %PORT%    Mode: %MODE%
-if defined DEEPSEEK_API_KEY (echo   API Key: 已配置 (from registry)) else (echo   API Key: 未配置)
+if defined DEEPSEEK_API_KEY (echo   API Key: configured [from registry]) else (echo   API Key: not configured)
 echo =============================================
 
 echo [STOP] Stopping old engine...
@@ -40,14 +40,21 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% .*LISTENING"') do (
         )
     )
 )
-timeout /t 1 /nobreak >nul
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8765 .*LISTENING"') do (
+    tasklist /fi "PID eq %%p" /fo csv /nh 2>nul | findstr /i "python.exe" >nul
+    if not errorlevel 1 (
+        echo [STOP] Killing old GUI PID %%p
+        taskkill /F /PID %%p >nul 2>&1
+    )
+)
+ping -n 2 127.0.0.1 >nul
 
 if not exist "%ENGINE%" (
     echo [ERROR] Engine binary not found: bin\gh_upx.exe / bin\gh.exe
     pause & exit /b 1
 )
 echo [START] Starting engine...
-start "General Harness Engine" cmd /k ""%ENGINE%" serve --port %PORT%"
+start "General Harness Engine" /D "%~dp0" cmd /k ""%ENGINE%" serve --port %PORT%"
 set /a TRY=0
 :wait_loop
 set /a TRY+=1
@@ -57,7 +64,7 @@ if !TRY! gtr 30 (
 )
 curl -s -o nul -w "%%{http_code}" --max-time 2 "http://127.0.0.1:%PORT%/health" > "%TEMP%\gh_r.txt" 2>nul
 set /p CODE=<"%TEMP%\gh_r.txt"
-if not "!CODE!"=="200" ( timeout /t 1 /nobreak >nul & goto :wait_loop )
+if not "!CODE!"=="200" ( ping -n 2 127.0.0.1 >nul & goto :wait_loop )
 echo [DONE] Engine restarted at http://127.0.0.1:%PORT%
 
 if "%MODE%"=="server" (
@@ -72,6 +79,15 @@ if "%MODE%"=="cli" (
 )
 
 rem ---- Default mode: Webview GUI ----
+set "GUI_UP=0"
+curl -s -o nul -w "%%{http_code}" --max-time 2 "http://127.0.0.1:8765/" > "%TEMP%\gh_gui.txt" 2>nul
+set /p GUIPROBE=<"%TEMP%\gh_gui.txt"
+if "%GUIPROBE%"=="200" set "GUI_UP=1"
+if "%GUI_UP%"=="1" (
+    echo [MODE] GUI already running at http://127.0.0.1:8765
+    start "" "http://127.0.0.1:8765"
+    exit /b 0
+)
 echo [MODE] Starting Webview GUI...
 python --version >nul 2>&1
 if errorlevel 1 (
@@ -79,5 +95,5 @@ if errorlevel 1 (
     echo         Try: restart.bat cli  ^(terminal^)  or  install Python.
     pause & exit /b 1
 )
-start "General Harness GUI" cmd /k "cd /d %~dp0 && python gui\gui.py --url http://127.0.0.1:%PORT%"
+start "General Harness GUI" /D "%~dp0" cmd /k python gui\gui.py --url http://127.0.0.1:%PORT%
 exit /b 0

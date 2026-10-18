@@ -10,8 +10,8 @@
 
 - **Engine**: `bin/gh_upx.exe` (2,043,904 bytes ≈ 1.95 MB) / `bin/gh.exe` (6,394,368 bytes ≈ 6.10 MB) — single file, zero third-party dependencies, ready to run after extraction
 - **Engine source**: `engine/` — pure Go standard library (including a hand-written HTTP layer), no external modules
-- **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; falls back to the system browser when unavailable
-- **Version**: `0.3.0` (new in this release: web search, plus the fixes listed under [Fixed in v0.3.0](#fixed-in-v030))
+- **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; the engine also serves an equivalent built-in page at `GET /ui` (v0.3.1), which `start.bat` opens automatically when Python or pywebview is missing
+- **Version**: `0.3.1` (new in this release: the built-in browser UI `GET /ui`, plus the fixes listed under [Fixed in v0.3.1](#fixed-in-v031))
 
 ---
 
@@ -72,7 +72,7 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-Setup-0.3.0.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
+Download `General-Harness-Setup-0.3.1.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
 
 - `DefaultDirName={autopf}\General Harness` combined with `PrivilegesRequired=lowest` means the default install target is **the current user's program directory**, not a machine-wide one;
 - The installer bundles everything needed (engine binary, config, GUI, sample models);
@@ -108,7 +108,7 @@ Script features:
 - Probes port health before starting: reuses an already-running engine instead of starting a duplicate;
 - Restart/stop kills the process via `gateway.pid` first, with a `netstat` port-based fallback;
 - Waits for the engine to be ready (polling `/health`, up to 30 seconds) before launching the frontend;
-- GUI mode checks for Python and gives a clear message if it is missing.
+- With Python, GUI mode opens a native Webview window; without Python (or without pywebview) `start.bat` now opens the engine's built-in `/ui` page instead of stopping with an error (v0.3.1).
 
 ### Command Line Startup
 
@@ -138,7 +138,7 @@ curl http://127.0.0.1:8000/health
 
 # 3) Identify the service and its version
 curl http://127.0.0.1:8000/
-# → {"service":"General Harness","version":"0.3.0"}
+# → {"service":"General Harness","ui":"/ui","version":"0.3.1"}
 
 # 4) List models (includes the bundled local GGUF sample)
 curl http://127.0.0.1:8000/v1/models
@@ -545,7 +545,12 @@ Groups by session (ordered by last activity, newest first) and sums the tokens o
 
 ### Root Endpoint
 
-`GET /` → `{"service":"General Harness","version":"0.3.0"}` (not rate-limited)
+`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.1"}` (not rate-limited)
+
+`GET /ui` → the built-in browser UI (HTML, 13,307 bytes embedded via `go:embed`; not rate-limited).
+It matches the desktop GUI feature-for-feature and needs no Python.
+
+The `"ui":"/ui"` field is new in v0.3.1 — `start.bat` opens that URL when Python (or pywebview) is missing.
 
 The old `"docs":"/docs"` field was misleading — the engine never implemented a `/docs` route — and has been removed in v0.3.0.
 
@@ -701,7 +706,10 @@ General_Harness_Release/
 │   ├── search_chat.go       # web_search integration into chat (query build, injection, sources)
 │   ├── search_chat_test.go  # Chat-side search tests (unchanged / inject / rewrite / degrade / 403)
 │   ├── htmltext.go          # HTML → text extraction, SSRF validation, page fetching
+│   ├── ui.go                # Built-in browser UI handler (/ui)
+│   ├── ui.html              # Built-in UI source (embedded via go:embed)
 │   ├── htmltext_test.go     # Extraction / entity / SSRF / redirect / truncation tests
+│   ├── ui_test.go           # Built-in UI endpoint tests
 │   ├── usage.go             # Usage stats (JSON persistence, 10000-record cap)
 │   ├── config.go            # Config loading & provider registry
 │   ├── yaml.go              # Hand-written YAML subset parser
@@ -757,16 +765,16 @@ The engine source has zero third-party dependencies (pure standard library): a h
 ## Running Tests
 
 ```bash
-# Go engine tests (unit + HTTP integration, 69 test functions)
+# Go engine tests (unit + HTTP integration, 71 test functions)
 cd engine && go test ./... -count=1
 
 # Python component tests (GUI proxy, frontend page, launcher logic)
 python -m unittest discover -s tests
 ```
 
-Measured state of the suite: **69 Go test functions, all green, none skipped** (`go test ./... -count=1` → `ok gh-engine`) — the 33 pre-existing engine / integration / agent tests plus 36 new tests covering web search, HTML extraction, SSRF, chat integration and the keep-alive/Content-Length fix (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, plus 2 new cases in `cloud_test.go`). **7 Python tests, all green** (`Ran 7 tests … OK`).
+Measured state of the suite: **71 Go test functions, all green, none skipped** (`go test ./... -count=1` → `ok gh-engine`) — the 33 pre-existing engine / integration / agent tests plus 38 new tests covering web search, HTML extraction, SSRF, chat integration, the built-in `/ui`, and the keep-alive/Content-Length fix (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, `ui_test.go` 2, plus 2 new cases in `cloud_test.go`). **7 Python tests, all green** (`Ran 7 tests … OK`).
 
-What is actually covered: YAML parsing, GGUF parsing (including invalid magic), usage stats (time series / conversation aggregation / custom range / persistence), key parsing and multi-key selection, provider registration, model routing, rate limiting (including 429), auth, the Ollama endpoints, streaming & non-streaming accounting, SSE parsing, the hand-written chunked reader plus keep-alive + `Content-Length` framing (with regression tests that fail if the fix is removed), the root endpoint reporting only service+version, agent allow-list/block-list/timeout/truncation, search config parsing and keywords, URL normalization and de-duplication, cache and fetch-content behavior, search error mapping, `search.backends` readiness, injected-context building, chat `web_search` (unchanged when absent, context+sources, explicit query, rewrite mode, streaming phase frame, graceful degradation, 403 when disabled), HTML extraction, entity decoding, SSRF rejection, redirect handling and truncation, GUI proxy forwarding, and single-file frontend integrity.
+What is actually covered: YAML parsing, GGUF parsing (including invalid magic), usage stats (time series / conversation aggregation / custom range / persistence), key parsing and multi-key selection, provider registration, model routing, rate limiting (including 429), auth, the Ollama endpoints, streaming & non-streaming accounting, SSE parsing, the hand-written chunked reader plus keep-alive + `Content-Length` framing (with regression tests that fail if the fix is removed), the root endpoint reporting service/version/ui, agent allow-list/block-list/timeout/truncation, search config parsing and keywords, URL normalization and de-duplication, cache and fetch-content behavior, search error mapping, `search.backends` readiness, injected-context building, chat `web_search` (unchanged when absent, context+sources, explicit query, rewrite mode, streaming phase frame, graceful degradation, 403 when disabled), HTML extraction, entity decoding, SSRF rejection, redirect handling and truncation, GUI proxy forwarding, and single-file frontend integrity.
 
 **Not covered** (stated honestly): the 429 branch for a saturated `max_concurrent` gate, concurrent multi-goroutine writes to usage stats, and live end-to-end tests against real cloud providers or real search engines — the retrieval chain is exercised against local HTTP test servers, provider calls use injected `ChatHandler`/`StreamHandler` stubs (the real-socket keep-alive + `Content-Length` path does have dedicated regression tests in `cloud_test.go`). Capabilities such as native pywebview window rendering are outside the automated suite.
 
@@ -784,6 +792,22 @@ Design approach: hand-written HTTP layer using only the `net` package (avoiding 
 
 ---
 
+## Fixed in v0.3.1
+
+> Why: measured on a clean Windows machine with **no Python** - the installer succeeded, but double-clicking
+> the desktop icon ended in an English error plus `pause`, while `installer.iss` claimed a browser-mode
+> fallback that did not actually exist.
+
+| Problem | Fix |
+| --- | --- |
+| On a machine without Python the app installs but is **unusable**: `start.bat` bails out with `pause & exit /b 1` | The engine now serves a built-in browser UI at `GET /ui` (embedded via `go:embed`, no external files); `start.bat` opens `http://127.0.0.1:8000/ui` when Python is missing, and now exits 0 |
+| Python present but pywebview missing (blocked pip / no permission): `python gui\gui.py` raises ImportError and the window flashes away | `start.bat` additionally probes `python -c "import webview"` and falls back to `/ui` on failure |
+| The root endpoint returned only the version, leaving Python-less users nowhere to go | `GET /` now includes a `"ui":"/ui"` field |
+| `/ui` is a static page, so repeated refreshes consumed the rate-limit budget | `/ui` is exempt from rate limiting, like `/health` and `/` |
+
+The built-in page matches the desktop GUI feature-for-feature (model picker, streaming, thinking fold,
+web-search toggle with source cards, usage panel); it only omits the time-series chart that `gui.py`
+renders as SVG in Python.
 ## Fixed in v0.3.0
 
 - **Keep-alive + `Content-Length` responses no longer time out** (`engine/cloud.go`): an upstream that holds the connection open (HTTP/1.1 keep-alive) previously blocked until the read timeout, because the body was only read to EOF. The body is now length-bounded (`Content-Length`) or chunk-decoded, so it returns as soon as the boundary is reached.

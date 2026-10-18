@@ -8,7 +8,7 @@
 > 界面）两种交互模式。核心引擎与界面完全解耦：只启动后端时使用
 > CLI，前后端一起运行时使用 GUI。
 
-- **版本**：v0.3.0（相对 v0.2.4 的主要变化是新增联网检索，见 [联网搜索](#联网搜索) 与 [v0.3.0 修复](#v030-修复)）
+- **版本**：v0.3.1（相对 v0.3.0 新增内置浏览器界面 `GET /ui` 并让 `start.bat` 在无 Python 时自动回落到它，见 [v0.3.1 修复](#v031-修复)；联网检索见 [联网搜索](#联网搜索)）
 - **引擎**：`bin/gh_upx.exe`（实测 2,043,904 字节 ≈ 2.0 MB）/ `bin/gh.exe`（实测 6,394,368 字节 ≈ 6.4 MB）——单文件、零第三方依赖、解压即用
 - **引擎源码**：`engine/`——纯 Go 标准库实现（含手写 HTTP 层），无任何外部模块
 - **GUI**：`gui/gui.py`——基于 pywebview 调用系统原生 Edge WebView2，不可用时自动回退系统浏览器
@@ -61,7 +61,7 @@
 
 | 能力 | 说明 |
 | --- | --- |
-| 🖥️ **双模前端** | 终端 CLI（ANSI 彩色流式输出）与 Webview GUI（原生渲染引擎、可折叠思考面板），核心与界面解耦 |
+| 🖥️ **双模前端** | 终端 CLI（ANSI 彩色流式输出）与 Webview GUI（原生渲染引擎、可折叠思考面板），核心与界面解耦；另有引擎内置的 `/ui` 页面（v0.3.1），无 Python 也能用 |
 | ☁️ **云端 API 代理** | 兼容 OpenAI 协议的厂商即插即用：DeepSeek / Kimi / Qwen / OpenAI，支持多 Key 配置与按需选择 |
 | 🦙 **Ollama 协议兼容** | 提供 `/api/tags`、`/api/chat`、`/api/generate`、`/api/models` 端点，Open WebUI 等 Ollama 生态工具可直接对接 |
 | 🔍 **联网检索**（v0.3.0 新增） | 默认关闭；开启后提供 `POST /v1/search` 与 `GET /v1/search/backends`，并可在 `/v1/chat/completions` 上用 `web_search` 增量字段注入带来源的检索资料；**用户问题原文绝不外发** |
@@ -78,7 +78,7 @@
 
 ### 方式一：Windows 安装包
 
-从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-Setup-0.3.0.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
+从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-Setup-0.3.1.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
 
 - 可自选安装目录：脚本中为 `DefaultDirName={autopf}\General Harness`，同时 `PrivilegesRequired=lowest`，因此**无需管理员权限**，实际安装到当前用户的程序目录（约 `%LocalAppData%\Programs\General Harness`），而非全局 `%ProgramFiles%`；
 - 安装包内置引擎二进制、`config.yaml`、启动脚本、GUI、示例 GGUF 与四个厂商插件配置；
@@ -86,13 +86,13 @@
 - 开始菜单默认创建 5 个快捷方式（GUI / CLI / 重启 / 停止 / 卸载）；
 - **桌面图标任务默认不勾选**（`[Tasks] desktopicon` 带 `Flags: unchecked`），需要在向导的“附加任务”页手动勾选。
 
-> `installer.iss` 是当前唯一的打包脚本（输出到 `release_assets/`，文件名取自 `#define MyAppVersion`）；该文件的 `MyAppVersion` 当前已是 `0.3.0`，与本文档一致。
+> `installer.iss` 是当前唯一的打包脚本（输出到 `release_assets/`，文件名取自 `#define MyAppVersion`）；该文件的 `MyAppVersion` 当前已是 `0.3.1`，与本文档一致。
 
 ### 方式二：绿色压缩包
 
 安装包之外，引擎本身是单文件零依赖的：把发行目录整体拷贝到任意位置，双击 `start.bat` 或直接运行 `bin\gh_upx.exe` 即可使用。
 
-> 说明：仓库内**没有**提供绿色包（zip）的打包脚本——`installer.iss` 只产出安装包。自 v0.3.0 起，[Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 会随安装包一并提供发行目录的 zip（如 `General-Harness-v0.3.0.zip`，与安装包同源）；若自行压缩发行目录，文件名不受本仓库约束。
+> 说明：仓库内**没有**提供绿色包（zip）的打包脚本——`installer.iss` 只产出安装包。自 v0.3.0 起，[Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 会随安装包一并提供发行目录的 zip（如 `General-Harness-v0.3.1.zip`，与安装包同源）；若自行压缩发行目录，文件名不受本仓库约束。
 
 ### 一键启动脚本
 
@@ -115,7 +115,7 @@ stop.bat               :: 一键停止引擎
 - 启动前探测端口健康状态：引擎已在运行则直接复用，不会重复启动；
 - 重启与停止优先按 `gateway.pid` 精确结束进程，并以 `netstat` / `tasklist` 按端口与进程名兜底；
 - 等待引擎就绪（轮询 `/health`，最长约 30 秒）后才进入前端；
-- GUI 模式自动检测 Python，缺失时给出明确提示。
+- 有 Python 时 GUI 模式弹原生 Webview 窗口；没有 Python 或没有 pywebview 时，`start.bat` 改为自动打开引擎内置的 `/ui` 页面（v0.3.1），不再报错退出。
 
 > 因为端口来源不一致，**只改 `config.yaml` 的 `server.port` 时 `.bat` 脚本仍会连 8000**。要换端口，请显式传参：`python start.py --port 9000`、`bin\gh_upx.exe serve --port 9000`，或直接编辑 `.bat` 里的 `set PORT=8000`。
 
@@ -373,7 +373,8 @@ data: [DONE]
 | 端点 | 响应 | 说明 |
 | --- | --- | --- |
 | `GET /health` | `{"status":"ok"}` | 不受限流与鉴权影响 |
-| `GET /` | `{"service":"General Harness","version":"0.3.0"}` | 服务标识与版本号，不限流 |
+| `GET /` | `{"service":"General Harness","ui":"/ui","version":"0.3.1"}` | 服务标识、版本号与内置界面入口，不限流 |
+| `GET /ui` | 内置浏览器界面（HTML） | v0.3.1 新增；与桌面 GUI 功能等价，无需 Python；同样不限流 |
 
 > v0.2.4 的根路径会额外返回 `"docs":"/docs"`，但引擎**从未实现 `/docs` 路由**（访问实测 404），该误导字段已在 v0.3.0 移除。
 
@@ -649,6 +650,20 @@ search:
 
 ---
 
+## v0.3.1 修复
+
+> 起因：在「零 Python」的干净 Windows 上实测安装包——装得上，但双击后只看到一行英文错误与 `pause`，
+> 而 `installer.iss` 却宣称会回落到浏览器模式（该模式此前并不存在）。
+
+| 问题 | 修复 |
+| --- | --- |
+| 无 Python 的机器装完**不可用**：`start.bat` 探测不到 Python 就 `pause & exit /b 1` | 引擎新增内置浏览器界面 `GET /ui`（`go:embed` 编进二进制，零外部文件依赖）；`start.bat` 在无 Python 时自动打开 `http://127.0.0.1:8000/ui`，退出码由 1 变为 0 |
+| 有 Python 但缺 pywebview（pip 被墙/权限不足）时 `python gui\gui.py` 抛 ImportError，窗口一闪而过 | `start.bat` 追加 `python -c "import webview"` 探测，失败同样回落到 `/ui` |
+| 根路径只返回版本号，无 Python 用户无处可去 | `GET /` 增加 `"ui":"/ui"` 字段 |
+| `/ui` 是静态页面，快速刷新会吃掉限流配额 | `/ui` 与 `/health`、`/` 一并豁免限流 |
+
+内置页面与桌面 GUI 功能等价：模型选择、流式输出、思考折叠、🌐 联网开关与来源卡片、📊 用量查询；
+只是不含 `gui.py` 用 Python 生成的分时图表（那是本地 SVG 渲染，引擎侧不重复实现）。
 ## v0.3.0 修复
 
 除了联网搜索，本版本修掉了三个已确认的问题：
@@ -838,6 +853,8 @@ General_Harness_Release/
 │   ├── search_api.go        # /v1/search 与 /v1/search/backends 处理器
 │   ├── search_chat.go       # 对话侧 web_search 集成（检索词构造与上下文注入）
 │   ├── htmltext.go          # SSRF 防护 + 手写 HTML 正文抽取
+│   ├── ui.go                # 内置浏览器界面 handler（/ui）
+│   ├── ui.html              # 内置界面源码（go:embed 编进二进制）
 │   ├── engine_test.go       # 单元测试
 │   ├── integration_test.go  # HTTP 集成测试
 │   ├── agent_test.go        # Agent 白名单/黑名单/超时测试
@@ -848,6 +865,7 @@ General_Harness_Release/
 │   ├── search_api_test.go   # 检索端点测试
 │   ├── search_chat_test.go  # 对话集成与降级测试
 │   ├── htmltext_test.go     # HTML 抽取 / SSRF / 正文抓取测试
+│   ├── ui_test.go           # 内置界面端点测试
 │   └── go.mod               # 模块定义（无外部依赖）
 ├── gui/
 │   ├── gui.py               # Webview GUI（pywebview / 浏览器回退，内置代理与单文件前端）
@@ -903,7 +921,7 @@ cd engine && go test ./... -count=1
 python -m unittest discover -s tests
 ```
 
-实测结果（v0.3.0）：`go test ./... -count=1` → `ok gh-engine`，69 个测试函数全部通过、无跳过；Python 侧 `Ran 7 tests ... OK`。分布为：既有测试 33 个（`engine_test.go` 9、`integration_test.go` 10、`agent_test.go` 8、`ollama_test.go` 2、`cloud_test.go` 2、`streaming_test.go` 2）+ v0.3.0 新增 36 个（`htmltext_test.go` 12、`search_test.go` 11、`search_chat_test.go` 8、`search_api_test.go` 3、`cloud_test.go` 新增 2 个 keep-alive 回归测试）。
+实测结果（v0.3.1）：`go test ./... -count=1` → `ok gh-engine`，71 个测试函数全部通过、无跳过；Python 侧 `Ran 7 tests ... OK`。分布为：既有测试 33 个（`engine_test.go` 9、`integration_test.go` 10、`agent_test.go` 8、`ollama_test.go` 2、`cloud_test.go` 2、`streaming_test.go` 2）+ v0.3.0 新增 36 个（`htmltext_test.go` 12、`search_test.go` 11、`search_chat_test.go` 8、`search_api_test.go` 3、`cloud_test.go` 新增 2 个 keep-alive 回归测试）。
 
 测试覆盖：YAML 子集解析、GGUF 解析（含非法魔数）、用量统计（时间序列 / 对话聚合 / custom 区间 / 持久化）、Key 解析与多 Key 选择、厂商注册、模型路由、限流（含 429）、鉴权、Ollama 兼容端点、流式与非流式记账、SSE 解析、手写 HTTP 客户端的 chunked 解码与 keep-alive+Content-Length 收尾（含“去掉修复即失败”的回归测试）、Agent 白名单/黑名单/超时/输出截断、检索核心（关键词提取、后端调用、缓存、结果排序与 URL 规范化）、`/v1/search` 与 `/v1/search/backends` 状态码、对话侧 `web_search` 注入与失败降级、HTML 正文抽取与 SSRF 地址校验、以及 GUI 代理转发与前端单文件完整性。
 

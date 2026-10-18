@@ -36,7 +36,8 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% .*LISTENING"') do (
 if "%STOPPED%"=="1" (
     echo [DONE] Engine stopped.
 ) else (
-    echo [INFO] No running engine detected (port %PORT% is free).
+    echo [INFO] No running engine detected - port %PORT% is free.
 )
+echo [TIP] GUI window is not closed by this script - close it manually if needed.
 pause
 exit /b 0
