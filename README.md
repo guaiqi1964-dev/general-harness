@@ -4,14 +4,16 @@
 
 > 一个开箱即用的本地 AI 网关：**Go 单二进制引擎**统一提供云端 API 代理、
 > Ollama 协议兼容、GGUF 文件解析与**联网检索**能力，并通过标准 HTTP API 对外服务。
-> 前端支持**终端 CLI**（ANSI 彩色流式输出）与 **Webview GUI**（可折叠 Thinking
-> 界面）两种交互模式。核心引擎与界面完全解耦：只启动后端时使用
-> CLI，前后端一起运行时使用 GUI。
+> 交互面只有**终端 CLI**（ANSI 彩色流式输出）：整个程序是一个可执行文件，
+> 不需要 Python、不需要浏览器、没有 Web 界面。
 
-- **版本**：v0.3.3（相对 v0.3.2 把 CLI 能力对齐桌面 GUI：思考过程折叠、用量统计、配置查看、密钥清除、后端切换、Ctrl+C 只中断当前生成、管道模式，见 [v0.3.3 修复](#v033-修复)；历次修复见 [v0.3.2](#v032-修复) / [v0.3.1](#v031-修复)；联网检索见 [联网搜索](#联网搜索)）
-- **引擎**：`bin/gh_upx.exe`（实测 2,070,016 字节 ≈ 2.0 MB）/ `bin/gh.exe`（实测 6,478,336 字节 ≈ 6.4 MB）——单文件、零第三方依赖、解压即用
+> **这是 `cli-only` 分支**：从主线移除了全部 GUI 代码（`gui/` 目录、`engine/ui.go`、
+> 内置 `/ui` 页面、pywebview 依赖与相关测试），只保留引擎与终端交互。
+> 主线（含 GUI）见 [main 分支](https://github.com/guaiqi1964-dev/general-harness)。
+
+- **版本**：v0.3.3-cli（CLI 能力与主线 v0.3.3 等价：思考过程折叠、用量统计、配置查看、密钥管理、后端切换、Ctrl+C 只中断当前生成、管道模式，见 [v0.3.3 修复](#v033-修复)）
+- **引擎**：`bin/gh_upx.exe`（实测 2,065,920 字节 ≈ 2.0 MB）——单文件、零第三方依赖、解压即用，无未压缩副本
 - **引擎源码**：`engine/`——纯 Go 标准库实现（含手写 HTTP 层），无任何外部模块
-- **GUI**：`gui/gui.py`——基于 pywebview 调用系统原生 Edge WebView2，不可用时自动回退系统浏览器
 
 ---
 
@@ -23,9 +25,8 @@
   - [方式二：绿色压缩包](#方式二绿色压缩包)
   - [一键启动脚本](#一键启动脚本)
   - [命令行启动](#命令行启动)
-- [三种启动模式](#三种启动模式)
+- [启动模式](#启动模式)
 - [终端 CLI 模式](#终端-cli-模式)
-- [Webview GUI 模式](#webview-gui-模式)
 - [标准 HTTP API 参考](#标准-http-api-参考)
   - [统一对话 /v1/chat/completions](#统一对话-v1chatcompletions)
   - [模型列表 /v1/models](#模型列表-v1models)
@@ -40,7 +41,7 @@
   - [接口契约](#接口契约)
   - [对话接口的 web_search 增量字段](#对话接口的-web_search-增量字段)
   - [安全与隐私防护](#安全与隐私防护)
-  - [前端用法](#前端用法)
+  - [CLI 用法](#cli-用法)
   - [缓存与并发](#缓存与并发)
 - [密钥与凭据管理](#密钥与凭据管理)
 - [v0.3.3 修复](#v033-修复)
@@ -65,7 +66,7 @@
 
 | 能力 | 说明 |
 | --- | --- |
-| 🖥️ **双模前端** | 终端 CLI（ANSI 彩色流式输出）与 Webview GUI（原生渲染引擎、可折叠思考面板），核心与界面解耦；另有引擎内置的 `/ui` 页面（v0.3.1），无 Python 也能用 |
+| 🖥️ **纯终端前端** | 终端 CLI（ANSI 彩色流式输出、思考过程折叠、用量图表、密钥管理与检索开关）。不需要 Python、不需要浏览器，整个程序就是一个 exe |
 | ☁️ **云端 API 代理** | 兼容 OpenAI 协议的厂商即插即用：DeepSeek / Kimi / Qwen / OpenAI，支持多 Key 配置与按需选择 |
 | 🦙 **Ollama 协议兼容** | 提供 `/api/tags`、`/api/chat`、`/api/generate`、`/api/models` 端点，Open WebUI 等 Ollama 生态工具可直接对接 |
 | 🔍 **联网检索**（v0.3.0 新增） | 默认关闭；开启后提供 `POST /v1/search` 与 `GET /v1/search/backends`，并可在 `/v1/chat/completions` 上用 `web_search` 增量字段注入带来源的检索资料；**用户问题原文绝不外发** |
@@ -74,8 +75,8 @@
 | 📊 **用量统计** | 时间维度（10 分钟至半年或自定义区间）与对话维度（最近 N 次）双聚合，JSON 原子持久化，内存最多保留 10000 条 |
 | 🔄 **自动重试** | 对 429、5xx 及网络错误进行指数退避重试（最多 3 次），上游错误统一映射 |
 | 🔒 **安全机制** | 可选网关鉴权（Bearer Token）、单 IP 滑动窗口限流、CORS 放行、Key 支持环境变量注入、正文抓取 SSRF 防护 |
-| ⚡ **极致轻量** | 引擎单二进制约 2.0 MB（UPX 压缩版实测 2,056,704 字节），零运行时依赖；手写 HTTP 层与 YAML 子集解析器 |
-| 🔑 **密钥管理**（v0.3.1 新增） | GUI 的 🔑 面板、CLI `/key`、`GET/POST /v1/keys` 三条通道都能填 Key，写入 `keys.yaml` 后热加载生效；删除该文件即回退 |
+| ⚡ **极致轻量** | 引擎单二进制约 2.0 MB（UPX 压缩版实测 2,065,920 字节），零运行时依赖；手写 HTTP 层与 YAML 子集解析器 |
+| 🔑 **密钥管理** | CLI `/key` 与 `GET/POST /v1/keys` 两条通道都能填 Key，写入 `keys.yaml` 后热加载生效；删除该文件即回退 |
 
 ---
 
@@ -83,13 +84,12 @@
 
 ### 方式一：Windows 安装包
 
-从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-Setup-0.3.3.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
+从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-CLI-Setup-0.3.3.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
 
-- 可自选安装目录：脚本中为 `DefaultDirName={autopf}\General Harness`，同时 `PrivilegesRequired=lowest`，因此**无需管理员权限**，实际安装到当前用户的程序目录（约 `%LocalAppData%\Programs\General Harness`），而非全局 `%ProgramFiles%`；
-- 安装包内置引擎二进制、`config.yaml`、启动脚本、GUI、示例 GGUF 与四个厂商插件配置；
-- 安装时自动检测 Python 并静默安装 GUI 依赖（pywebview），失败不阻断安装；
-- 开始菜单默认创建 5 个快捷方式（GUI / CLI / 重启 / 停止 / 卸载）；
-- **桌面快捷方式默认创建**（v0.3.1 起 `[Tasks] desktopicon` 不再带 `Flags: unchecked`）；开始菜单快捷方式始终创建。
+- 可自选安装目录：脚本中为 `DefaultDirName={autopf}\General Harness CLI`，同时 `PrivilegesRequired=lowest`，因此**无需管理员权限**，实际安装到当前用户的程序目录（约 `%LocalAppData%\Programs\General Harness CLI`），而非全局 `%ProgramFiles%`；
+- 安装包只内置 `bin\gh_upx.exe`、`config.yaml`、三个启动脚本、`start.py`、文档、示例 GGUF 与四个厂商插件配置——**没有任何 Python 依赖**；
+- 开始菜单创建 4 个快捷方式（CLI / 重启 / 停止 / 卸载）；
+- **桌面快捷方式默认创建**（`[Tasks] desktopicon` 不带 `Flags: unchecked`）；开始菜单快捷方式始终创建。
 - **品牌图标**：安装程序自身、桌面与开始菜单全部快捷方式、控制面板卸载项统一使用 `assets/general-harness.ico`（多尺寸 16/20/24/32/40/48/64/128/256，32bpp），安装后该图标随包落到 `{app}\general-harness.ico`。
 
 > `installer.iss` 是当前唯一的打包脚本（输出到 `release_assets/`，文件名取自 `#define MyAppVersion`）；该文件的 `MyAppVersion` 当前已是 `0.3.3`，与本文档一致。
@@ -98,18 +98,16 @@
 
 安装包之外，引擎本身是单文件零依赖的：把发行目录整体拷贝到任意位置，双击 `start.bat` 或直接运行 `bin\gh_upx.exe` 即可使用。
 
-> 说明：仓库内**没有**提供绿色包（zip）的打包脚本——`installer.iss` 只产出安装包。自 v0.3.0 起，[Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 会随安装包一并提供发行目录的 zip（如 `General-Harness-v0.3.3.zip`，与安装包同源）；若自行压缩发行目录，文件名不受本仓库约束。
+> 说明：仓库内**没有**提供绿色包（zip）的打包脚本——`installer.iss` 只产出安装包。自 v0.3.0 起，[Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 会随安装包一并提供发行目录的 zip（如 `General-Harness-CLI-v0.3.3.zip`，与安装包同源）；若自行压缩发行目录，文件名不受本仓库约束。
 
 ### 一键启动脚本
 
 安装包与压缩包内均附带三个管理脚本，双击即可使用：
 
 ```bat
-start.bat              :: 一键启动，打开 Webview GUI
-start.bat cli          :: 一键启动，进入终端 CLI
+start.bat              :: 一键启动，进入终端 CLI
 start.bat server       :: 一键启动，仅运行 HTTP 服务
-restart.bat            :: 一键重启并打开 GUI
-restart.bat cli        :: 一键重启进入 CLI
+restart.bat            :: 一键重启并进入 CLI
 stop.bat               :: 一键停止引擎
 ```
 
@@ -117,11 +115,11 @@ stop.bat               :: 一键停止引擎
 
 - **引擎选择**：`start.bat` 与 `restart.bat` 优先使用 `bin\gh_upx.exe`，缺失时回退 `bin\gh.exe`；而 **`start.py` 固定使用 `bin\gh.exe`**，没有 UPX 优先逻辑，也没有回退——该文件不存在时直接打印“未找到引擎二进制”并以退出码 1 结束。
 - **端口来源（三者不一致）**：`start.bat` / `restart.bat` / `stop.bat` **硬编码 8000**，完全不读 `config.yaml`，改 `server.port` 对它们无效；`start.py` 会读 `config.yaml` 的 `server.port`，但这一步依赖 PyYAML，**未安装 PyYAML（或解析失败）时会静默回退到 8000**。
-- **`start.bat` 不调用 `start.py`**：它自己以 `bin\gh_upx.exe serve --port 8000` 拉起引擎（新开一个控制台窗口），并用 `curl` 轮询 `/health`；`cli` 模式直接在引擎里跑 `chat`，`gui` 模式再启动 `python gui\gui.py`。
+- **`start.bat` 不调用 `start.py`**：它自己以 `bin\gh_upx.exe serve --port 8000` 拉起引擎（新开一个控制台窗口），并用 `curl` 轮询 `/health`；引擎就绪后直接在同一个控制台里跑 `chat`。
 - 启动前探测端口健康状态：引擎已在运行则直接复用，不会重复启动；
 - 重启与停止优先按 `gateway.pid` 精确结束进程，并以 `netstat` / `tasklist` 按端口与进程名兜底；
-- 等待引擎就绪（轮询 `/health`，最长约 30 秒）后才进入前端；
-- 有 Python 时 GUI 模式弹原生 Webview 窗口；没有 Python 或没有 pywebview 时，`start.bat` 改为自动打开引擎内置的 `/ui` 页面（v0.3.1），不再报错退出。
+- 等待引擎就绪（轮询 `/health`，最长约 30 秒）后才进入 CLI；
+- 传入 `gui` 参数时会提示「这个版本不含 GUI」并改为进入 CLI，不会静默忽略。
 
 > 因为端口来源不一致，**只改 `config.yaml` 的 `server.port` 时 `.bat` 脚本仍会连 8000**。要换端口，请显式传参：`python start.py --port 9000`、`bin\gh_upx.exe serve --port 9000`，或直接编辑 `.bat` 里的 `set PORT=8000`。
 
@@ -131,11 +129,12 @@ stop.bat               :: 一键停止引擎
 # 终端 CLI 模式（推荐先尝试）
 python start.py
 
-# Webview GUI 模式
-python start.py --gui
-
 # 仅启动引擎服务（供 Open WebUI 等对接）
 python start.py --server
+
+# 完全不用 Python：
+bin\gh_upx.exe            :: 进 CLI
+bin\gh_upx.exe serve      :: 只起 HTTP 服务
 ```
 
 > 引擎默认监听 `http://127.0.0.1:8000`，可用 `--port <端口>` 覆盖。
@@ -158,12 +157,11 @@ curl http://127.0.0.1:8000/v1/models
 
 ---
 
-## 三种启动模式
+## 启动模式
 
 | 命令 | 模式 | 说明 |
 | --- | --- | --- |
 | `python start.py` | CLI | 自动拉起引擎并进入终端对话，Ctrl+C 退出后自动关闭引擎 |
-| `python start.py --gui` | GUI | 自动拉起引擎并弹出原生 Webview 窗口 |
 | `python start.py --server` | 服务 | 仅启动引擎 HTTP API，常驻后台 |
 | `bin\gh_upx.exe serve` | 服务 | 同上，不依赖 Python |
 | `bin\gh_upx.exe`（无参数） | CLI | 直接进入终端模式（引擎内嵌，无需单独的服务） |
@@ -174,7 +172,7 @@ curl http://127.0.0.1:8000/v1/models
 
 ## 终端 CLI 模式
 
-引擎内置终端交互模式（`gh chat` 或直接运行 `bin\gh_upx.exe`）。v0.3.3 起，CLI 能力与桌面 GUI 基本对齐：
+引擎内置终端交互模式（`gh chat` 或直接运行 `bin\gh_upx.exe`）。v0.3.3 起，终端里就能完成配置、检索、用量查看与密钥管理：
 
 ```
 ═══ General Harness CLI ═══
@@ -248,27 +246,6 @@ echo "总结这段日志" | gh chat     # 管道模式：stdout 只有正文，�
 | `models` | 打印模型列表后退出 |
 | `gguf <file.gguf>` | 解析指定 GGUF 文件并打印 JSON 元数据 |
 | `help` | 显示帮助 |
-
----
-
-## Webview GUI 模式
-
-```bash
-python start.py --gui
-# 或：python gui/gui.py --url http://127.0.0.1:8000
-```
-
-- **渲染引擎**：优先使用 pywebview（Windows 上复用系统原生 Edge WebView2）；未安装 pywebview 时自动回退到系统默认浏览器。
-- **界面能力**：
-  - 模型下拉框（从 `/api/models` 动态加载云端与本地模型）；
-  - 流式打字机输出（SSE）；
-  - 可折叠「💭 思考过程」面板（使用 `<details>`，点击展开或收起；引擎返回非空 `thinking` 时显示）；
-  - 「🧠 深度思考」开关：在模型列表中自动切到名字含 `reasoner` 的推理模型（找不到时提示手动选择）；
-  - 「🌐 联网」开关（v0.3.0 新增，见 [联网搜索 → 前端用法](#前端用法)）与回答下方的来源卡片；
-  - 「📊 用量」面板（分时统计图 + 历史对话列表）、网关 Key 输入框、刷新 / 清空、状态栏提示；
-  - Enter 发送、Shift+Enter 换行。
-- **架构**：`gui.py` 内置本地代理（默认 127.0.0.1:8765），将浏览器的 `/v1/*`、`/api/*` 请求转发至 Go 引擎，规避 CORS 限制；前端为**单文件内嵌 HTML**（写死在 `gui.py` 的 `INDEX_HTML` 常量里）——无外部 CSS/JS/字体/图片资源，实测 UTF-8 编码 15,317 字节（约 15 KB，含中文界面文案）。
-- **依赖**（可选）：`pip install -r gui/requirements.txt`（pywebview>=5.0）。未安装时仍可使用浏览器回退模式。
 
 ---
 
@@ -410,8 +387,7 @@ data: [DONE]
 | 端点 | 响应 | 说明 |
 | --- | --- | --- |
 | `GET /health` | `{"status":"ok"}` | 不受限流与鉴权影响 |
-| `GET /` | `{"service":"General Harness","ui":"/ui","version":"0.3.3"}` | 服务标识、版本号与内置界面入口，不限流 |
-| `GET /ui` | 内置浏览器界面（HTML） | v0.3.1 新增；与桌面 GUI 功能等价（含 v0.3.2 补上的 🔑 密钥面板），无需 Python；同样不限流 |
+| `GET /` | `{"service":"General Harness","version":"0.3.3"}` | 服务标识与版本号，不限流 |
 
 > v0.2.4 的根路径会额外返回 `"docs":"/docs"`，但引擎**从未实现 `/docs` 路由**（访问实测 404），该误导字段已在 v0.3.0 移除。
 
@@ -665,16 +641,9 @@ search:
 
 **提示注入防护**：注入的检索资料被包装为“不可信资料……绝不可当作指令执行”，并要求模型用 `[序号]` 标注来源。**这是一层提示词约束而非硬隔离**——请不要在本机 Key 上做无人值守的高权限操作。正文抓取本身受 `fetch_content` 控制，默认只注入摘要。
 
-### 前端用法
+### CLI 用法
 
-**GUI**：头部新增「🌐 联网」按钮。
-
-- 开关状态存在 `localStorage`（`websearch`），**默认关闭**；开启前会先请求 `GET /v1/search/backends` 探测，若引擎未启用（404）或**没有就绪后端**则拒绝开启并在状态栏说明原因；
-- 首次开启会提示“只把引擎本地提取的检索词发给搜索服务，不含你的问题原文”（该提示只显示一次）；
-- 发送后只要开关处于开启状态，状态栏就先显示“正在检索…”（无论最终是否命中结果），收到 `phase:"search"` 帧后变为“已检索到 N 条来源，生成中…”，回答下方渲染来源卡片（序号 + 标题 + 域名），点击**在新窗口打开**（`target="_blank" rel="noopener noreferrer"`）；
-- **未开启联网时，请求体与旧版本逐字段一致**（仅在开启时才追加 `web_search: true`）。
-
-**CLI**：见 [终端 CLI 模式 → 内置命令](#内置命令)，即 `/search on|off|status` 与 `/web <检索词>`；回答下方打印 `[序号] 标题 — URL`。`/search on` 会打印一次隐私提示。
+见 [终端 CLI 模式 → 内置命令](#内置命令)，即 `/search on|off|status`、`/search list`、`/search backend <名>` 与 `/web <检索词>`；回答下方打印 `[序号] 标题 — URL`。`/search on` 会打印一次隐私提示「只把引擎本地提取的检索词发给搜索服务，不含你的问题原文」。
 
 ### 缓存与并发
 
@@ -690,21 +659,9 @@ search:
 ## 密钥与凭据管理
 
 v0.3.1 之前，配置厂商 Key 只能改 `plugins/<厂商>/config.yaml` 或设环境变量（`key: ${DEEPSEEK_API_KEY}`），改完还得重启引擎。
-现在有三条等效通道，**都写入 `keys.yaml`，保存即生效（热加载，无需重启）**。
+现在有两条等效通道，**都写入 `keys.yaml`，保存即生效（热加载，无需重启）**。
 
-### 1. GUI：🔑 密钥 面板
-
-点顶部工具栏的 **🔑 密钥**，面板列出全部已加载厂商及其状态：
-
-| 状态 | 含义 |
-| --- | --- |
-| 未配置 | `plugins/<厂商>/config.yaml` 与环境变量里都没有可用 Key，调用会 401 |
-| 已配置 `sk-a****1234` | 有可用 Key，只回显首尾 4 字符 |
-| 占位符（请求会失败） | 插件配置里还是 `sk-xxxxxx`/`sk-yyyyyy` 这类示例占位符——非空所以被当作「已配置」，但真请求上游一定 401，请换成真 Key |
-
-在对应行粘贴 Key 点「保存」，状态立即刷新，下一次对话就用新 Key。
-
-### 2. CLI：`/key` 命令
+### 1. CLI：`/key` 命令
 
 ```text
 /key list                         # 列出厂商与配置状态
@@ -712,7 +669,7 @@ v0.3.1 之前，配置厂商 Key 只能改 `plugins/<厂商>/config.yaml` 或设
 /key help
 ```
 
-### 3. HTTP：`GET/POST /v1/keys`
+### 2. HTTP：`GET/POST /v1/keys`
 
 ```bash
 # 查看状态（不含完整 Key，只回显掩码）
@@ -740,10 +697,16 @@ curl -X POST http://127.0.0.1:8000/v1/keys \
 
 ---
 
+## 历史修复记录（v0.3.0 起）
+
+> 以下各节记录主线历史上的修复。**本分支（`cli-only`）已移除全部 GUI 代码**——凡是提到
+> `/ui`、`gui.py`、`ui.html`、pywebview 的条目，都是主线当时的形态，在本分支里对应能力
+> 要么不存在（Web 界面），要么以纯终端形态存在（密钥管理、联网检索、用量查看）。
+
 ## v0.3.3 修复
 
 > 起因：CLI 一直是「能用但不顺手」——思考段只打个「…」、没有用量面板、看不到配置、
-> 生成中途没法停。这一版把桌面 GUI 的能力搬进终端。
+> 生成中途没法停。这一版把这些能力全部搬进终端（本分支保留了它们的全部形态）。
 
 | 问题 | 修复 |
 | --- | --- |
@@ -926,7 +889,7 @@ models:
    - `gh gguf models/xxx.gguf`（命令行解析）；
    - `GET /api/gguf/<名称>`；
    - `GET /v1/models`（显示为 `local/<名称>`）；
-   - 在 CLI / GUI 中直接选择 `local/<名称>` 对话（返回元数据摘要回复）。
+   - 在 CLI 中用 `/model local/<名称>` 选中后对话（返回元数据摘要回复）。
 
 > 说明：本引擎提供 GGUF **解析能力**（架构、上下文、词表等元数据），不包含本地推理。如需本地推理，请配合 llama.cpp 等推理后端使用。
 
@@ -962,8 +925,7 @@ models:
 ```
 General_Harness_Release/
 ├── bin/
-│   ├── gh_upx.exe           # 引擎（UPX 压缩版，实测 2,056,704 字节 ≈ 2.0 MB，推荐）
-│   └── gh.exe               # 引擎（strip 版，实测 6,433,280 字节 ≈ 6.4 MB）
+│   └── gh_upx.exe           # 引擎（UPX 压缩版，实测 2,065,920 字节 ≈ 2.0 MB）
 ├── engine/                  # Go 引擎源码（零第三方依赖）
 │   ├── main.go              # 入口与子命令分发
 │   ├── server.go            # HTTP 路由与全部处理器
@@ -981,9 +943,7 @@ General_Harness_Release/
 │   ├── search_api.go        # /v1/search 与 /v1/search/backends 处理器
 │   ├── search_chat.go       # 对话侧 web_search 集成（检索词构造与上下文注入）
 │   ├── htmltext.go          # SSRF 防护 + 手写 HTML 正文抽取
-│   ├── ui.go                # 内置浏览器界面 handler（/ui）
 │   ├── keys.go              # 密钥管理（/v1/keys、keys.yaml 覆盖层与热加载）
-│   ├── ui.html              # 内置界面源码（go:embed 编进二进制）
 │   ├── engine_test.go       # 单元测试
 │   ├── integration_test.go  # HTTP 集成测试
 │   ├── agent_test.go        # Agent 白名单/黑名单/超时测试
@@ -994,12 +954,8 @@ General_Harness_Release/
 │   ├── search_api_test.go   # 检索端点测试
 │   ├── search_chat_test.go  # 对话集成与降级测试
 │   ├── htmltext_test.go     # HTML 抽取 / SSRF / 正文抓取测试
-│   ├── ui_test.go           # 内置界面端点测试
 │   ├── keys_test.go         # 密钥覆盖层 / 掩码 / 热加载 / 回环限制测试
 │   └── go.mod               # 模块定义（无外部依赖）
-├── gui/
-│   ├── gui.py               # Webview GUI（pywebview / 浏览器回退，内置代理与单文件前端）
-│   └── requirements.txt     # GUI 依赖（pywebview>=5.0，可选）
 ├── models/
 │   └── demo-qwen2.gguf      # 示例 GGUF（演示用）
 ├── plugins/
@@ -1010,7 +966,6 @@ General_Harness_Release/
 ├── assets/
 │   └── general-harness.ico  # 品牌图标（16~256 共 9 档）：安装包、桌面/开始菜单快捷方式、卸载项统一使用
 ├── cli/README.md            # CLI 模式说明
-├── tests/test_gui.py        # GUI / 代理 / 启动器测试
 ├── config.yaml              # 全局配置
 ├── start.py                 # 统一启动器（Python）
 ├── start.bat                # 一键启动脚本
@@ -1045,19 +1000,15 @@ upx --lzma -9 -o ../bin/gh_upx.exe ../bin/gh.exe
 ## 运行测试
 
 ```bash
-# Go 引擎测试：101 个测试函数（单元 + HTTP 集成 + CLI），实测全绿
+# Go 引擎测试：99 个测试函数（单元 + HTTP 集成 + CLI），实测全绿
 cd engine && go test ./... -count=1
-
-# Python 组件测试：7 个测试（GUI 代理、前端页面、启动器逻辑），实测全绿
-# 注意：必须在仓库根目录执行；在 engine/ 或 tests/ 目录下执行会因无法导入而报错
-python -m unittest discover -s tests
 ```
 
-实测结果（v0.3.3）：`go test ./... -count=1` → `ok gh-engine`，101 个测试函数全部通过、无跳过；Python 侧 `Ran 7 tests ... OK`。分布为：既有测试 33 个（`engine_test.go` 9、`integration_test.go` 10、`agent_test.go` 8、`ollama_test.go` 2、`cloud_test.go` 2、`streaming_test.go` 2）+ v0.3.0 新增 36 个（`htmltext_test.go` 12、`search_test.go` 11、`search_chat_test.go` 8、`search_api_test.go` 3、`cloud_test.go` 新增 2 个 keep-alive 回归测试）+ v0.3.1/v0.3.2 新增 8 个（`ui_test.go` 2、`keys_test.go` 6：覆盖走查、YAML 引号、掩码、`/v1/keys` 写入与热加载、参数校验、非本机访问拒绝）+ v0.3.3 新增 22 个（`cli_test.go`：命令解析、模型切换、思考折叠与展开、Ctrl+C 中断、用量表格与会话列表、密钥设置与清除、后端就绪校验、管道模式、失败不入历史）。
+实测结果（v0.3.3-cli）：`go test ./... -count=1` → `ok gh-engine 9.434s`，**PASS 99 / FAIL 0 / SKIP 0**。分布为：既有测试 33 个（`engine_test.go` 9、`integration_test.go` 10、`agent_test.go` 8、`ollama_test.go` 2、`cloud_test.go` 2、`streaming_test.go` 2）+ v0.3.0 新增 36 个（`htmltext_test.go` 12、`search_test.go` 11、`search_chat_test.go` 8、`search_api_test.go` 3、`cloud_test.go` 新增 2 个 keep-alive 回归测试）+ v0.3.1/v0.3.2 新增 8 个（`keys_test.go`：覆盖走查、YAML 引号、掩码、`/v1/keys` 写入与热加载、参数校验、非本机访问拒绝、base/override 合并、`keys.yaml` 变更检测）+ v0.3.3 新增 22 个（`cli_test.go`：命令解析、模型切换、思考折叠与展开、Ctrl+C 中断、用量表格与会话列表、密钥设置与清除、后端就绪校验、管道模式、失败不入历史）。
 
-测试覆盖：YAML 子集解析、GGUF 解析（含非法魔数）、用量统计（时间序列 / 对话聚合 / custom 区间 / 持久化）、Key 解析与多 Key 选择、厂商注册、模型路由、限流（含 429）、鉴权、Ollama 兼容端点、流式与非流式记账、SSE 解析、手写 HTTP 客户端的 chunked 解码与 keep-alive+Content-Length 收尾（含“去掉修复即失败”的回归测试）、Agent 白名单/黑名单/超时/输出截断、检索核心（关键词提取、后端调用、缓存、结果排序与 URL 规范化）、`/v1/search` 与 `/v1/search/backends` 状态码、对话侧 `web_search` 注入与失败降级、HTML 正文抽取与 SSRF 地址校验、以及 GUI 代理转发与前端单文件完整性。
+测试覆盖：YAML 子集解析、GGUF 解析（含非法魔数）、用量统计（时间序列 / 对话聚合 / custom 区间 / 持久化）、Key 解析与多 Key 选择、厂商注册、模型路由、限流（含 429）、鉴权、Ollama 兼容端点、流式与非流式记账、SSE 解析、手写 HTTP 客户端的 chunked 解码与 keep-alive+Content-Length 收尾（含“去掉修复即失败”的回归测试）、Agent 白名单/黑名单/超时/输出截断、检索核心（关键词提取、后端调用、缓存、结果排序与 URL 规范化）、`/v1/search` 与 `/v1/search/backends` 状态码、对话侧 `web_search` 注入与失败降级、HTML 正文抽取与 SSRF 地址校验。
 
-**未覆盖**：`max_concurrent` 并发闸门满时的 429 分支、用量统计的多协程并发写入、真实云端厂商与真实搜索引擎的联网端到端测试——检索链路用本地 HTTP 测试服务器替身验证，厂商调用用注入的 `ChatHandler`/`StreamHandler` 桩替代（keep-alive + Content-Length 那条真实 socket 路径在 `cloud_test.go` 里有独立回归测试）。此外，pywebview 原生窗口渲染等能力不在自动化测试范围内。
+**未覆盖**：`max_concurrent` 并发闸门满时的 429 分支、用量统计的多协程并发写入、真实云端厂商与真实搜索引擎的联网端到端测试——检索链路用本地 HTTP 测试服务器替身验证，厂商调用用注入的 `ChatHandler`/`StreamHandler` 桩替代（keep-alive + Content-Length 那条真实 socket 路径在 `cloud_test.go` 里有独立回归测试）。本分支不含 GUI，因此没有任何与界面相关的测试。
 
 ---
 
@@ -1065,13 +1016,12 @@ python -m unittest discover -s tests
 
 | 构建 | 体积（实测字节数） |
 | --- | --- |
-| 引擎 strip（`-s -w -buildid=` + trimpath） | `bin/gh.exe` = 6,433,280 字节 ≈ **6.4 MB** |
-| 引擎 UPX 压缩（`--lzma -9`） | `bin/gh_upx.exe` = 2,056,704 字节 ≈ **2.0 MB** |
-| GUI 前端单文件 HTML（`gui/gui.py` 的 `INDEX_HTML` 常量） | 14,324 字符 / **15,317 字节**（UTF-8，含中文文案） |
+| 引擎 strip（`-s -w -buildid=` + trimpath，仅作中间产物，不入库） | 6,458,880 字节 ≈ **6.16 MB** |
+| 引擎 UPX 压缩（`--lzma -9`，唯一发行二进制） | `bin/gh_upx.exe` = 2,065,920 字节 ≈ **1.97 MB**（压缩率 31.99%） |
 
 设计思路：仅使用 `net` 包手写 HTTP 层（避开体积较大的 `net/http` 标准库）+ 零第三方依赖 + UPX 压缩。引擎单文件、零运行时依赖，解压即可运行。
 
-> 关于“<10 KB 前端”的说法：该断言在 v0.3.0 之后已不成立（新增联网开关与来源卡片后，内嵌 HTML 实测约 15 KB）。前端依旧是**单文件内嵌、无任何外部 CSS/JS/字体/图片资源**。
+> **本分支相对主线省下的体积**：不再嵌入 `ui.html`（约 18 KB 源码，编进二进制后更大）、不再提交 6.4 MB 的未压缩 `gh.exe`、不再附带 `gui/` 目录与 pywebview 运行链。发行目录只剩一个 2.0 MB 的 exe 加配置与脚本。
 
 ---
 
@@ -1087,7 +1037,7 @@ python -m unittest discover -s tests
 - `bin\gh_upx.exe serve` —— 启动 HTTP 服务；
 - 直接运行 `bin\gh_upx.exe` —— 进入终端 CLI。
 
-Python 仅在两处使用：`start.py` 启动器和 Webview GUI 模式。
+`start.py` 只是个可选包装器——不用它也一样：直接跑 `bin\gh_upx.exe` 就是完整程序。
 </details>
 
 <details>
@@ -1100,8 +1050,8 @@ Python 仅在两处使用：`start.py` 启动器和 Webview GUI 模式。
 | 安装包（.exe，由 `installer.iss` 产出） | 绿色压缩包（.zip，自行压缩发行目录） |
 | --- | --- |
 | 向导式安装，可自选安装目录 | 解压即用，无需安装 |
-| 开始菜单创建 5 个快捷方式；**桌面快捷方式默认创建**（v0.3.1 起不再带 `Flags: unchecked`） | 不写注册表、不留系统目录；卸载时会清理 `keys.yaml` |
-| 安装时自动检测 Python 并尝试安装 GUI 依赖（失败不阻断） | 需自行 `pip install -r gui/requirements.txt` |
+| 开始菜单创建 4 个快捷方式；**桌面快捷方式默认创建**（不带 `Flags: unchecked`） | 不写注册表、不留系统目录；卸载时会清理 `keys.yaml` |
+| 不安装任何 Python 依赖 | 同样不需要 Python，解压即用 |
 
 > `DefaultDirName={autopf}\General Harness` 配合 `PrivilegesRequired=lowest`：**安装不需要管理员权限，实际装到当前用户目录**（约 `%LocalAppData%\Programs\General Harness`），而非全局 `%ProgramFiles%`。
 
@@ -1116,7 +1066,6 @@ Python 仅在两处使用：`start.py` 启动器和 Webview GUI 模式。
 ```bash
 python start.py --port 9000                 # 通过启动器
 bin\gh_upx.exe serve --port 9000            # 直接启动引擎
-python gui/gui.py --url http://127.0.0.1:9000   # GUI 连接新端口
 ```
 
 > 修改 `config.yaml` 中 `server.port` 后，**只有 `start.py` 会读取新端口**（且依赖 PyYAML，未安装时静默回退 8000）；`start.bat` / `restart.bat` / `stop.bat` 端口硬编码为 8000，**忽略 `config.yaml` 的 `server.port`**。最稳妥的做法是显式传参或直接改脚本里的 `set PORT=8000`。
@@ -1149,14 +1098,14 @@ python gui/gui.py --url http://127.0.0.1:9000   # GUI 连接新端口
 </details>
 
 <details>
-<summary><b>为什么有两个 gh.exe？</b></summary>
+<summary><b>仓库里为什么只有一个 gh_upx.exe？</b></summary>
 
-- `gh_upx.exe`：UPX 压缩版（实测 2,056,704 字节 ≈ 2.0 MB），体积更小，运行时自动解压到内存；
-- `gh.exe`：常规 strip 版（实测 6,433,280 字节 ≈ 6.4 MB），启动略快。
+- `gh_upx.exe`：UPX 压缩版（实测 2,065,920 字节 ≈ 2.0 MB），运行时自动解压到内存——这是本分支**唯一提交**的二进制；
+- `gh.exe`：常规 strip 版（约 6.46 MB，启动略快），**不再入库**，需要时自行 `cd engine && go build -o ../bin/gh.exe .`。
 
-两者功能完全一致，日常推荐使用 `gh_upx.exe`。
+两者功能完全一致，日常推荐 `gh_upx.exe`。
 
-> 关于“所有脚本都会优先选择 `gh_upx.exe`”的旧说法**不成立**：实测只有 `start.bat` 与 `restart.bat` 优先使用 `gh_upx.exe`；`start.py` 固定调用 `bin/gh.exe`，既没有 UPX 优先逻辑，也没有回退（文件缺失时直接报错退出）。
+> 引擎选择顺序：`start.bat`、`restart.bat`、`start.py` 都优先 `gh_upx.exe`，缺失时回退 `gh.exe`（本分支只带前者，所以回退需要自己编译一个）。
 </details>
 
 ### 🔌 集成与对接
@@ -1181,7 +1130,7 @@ curl http://127.0.0.1:8000/api/tags
 
 - 普通输出：请求完成后一次性返回完整 JSON；
 - 流式输出（`stream: true`）：以 SSE 逐块推送 `content`，以 `data: [DONE]` 结束，首字延迟更低、体验更流畅；
-- 思考类模型在流式下额外返回 `thinking`（由上游 `reasoning_content` 映射而来），GUI 侧有「💭 思考过程」折叠面板可展开查看；**CLI 侧默认折叠为一行 `💭 思考中… N 字`**（`/think on` 可展开为灰色正文；重定向时只输出一行汇总）后输出正文。
+- 思考类模型在流式下额外返回 `thinking`（由上游 `reasoning_content` 映射而来）；CLI 默认折叠为一行 `💭 思考中… N 字`（`/think on` 可展开为灰色正文；重定向时只输出一行汇总）后输出正文。
 </details>
 
 <details>
@@ -1213,17 +1162,6 @@ curl http://127.0.0.1:8000/api/tags
 </details>
 
 <details>
-<summary><b>GUI 窗口打不开怎么办？</b></summary>
-
-按顺序排查：
-
-1. 确认 Python 版本 ≥ 3.10（`python --version`）；
-2. 确认引擎已就绪（`curl http://127.0.0.1:8000/health` 返回 `{"status":"ok"}`）；
-3. 未安装 pywebview 时会自动回退系统浏览器打开，属正常降级；如需原生窗口可执行 `pip install -r gui/requirements.txt`；
-4. 若仍无窗口，直接访问 `http://127.0.0.1:8765/index.html` 使用同一前端。
-</details>
-
-<details>
 <summary><b>引擎启动后立刻退出怎么办？</b></summary>
 
 通常是端口被占用或配置错误：
@@ -1235,17 +1173,18 @@ curl http://127.0.0.1:8000/api/tags
 
 ## 已知限制
 
-- **仅支持 Windows**：仓库只提交 Windows 引擎二进制（`bin/gh.exe` / `bin/gh_upx.exe`），macOS/Linux 需自行从源码构建（`cd engine && go build`）。
+- **仅支持 Windows**：仓库只提交 Windows 引擎二进制（`bin/gh_upx.exe`），macOS/Linux 需自行从源码构建（`cd engine && go build`）。
 - **API Key 请勿明文提交**：`plugins/*/config.yaml` 中的 Key 建议使用 `${环境变量名}` 写法，填入真实 Key 前确认不会被提交到版本库。
 - **YAML 为子集解析器**：手写 YAML 解析器不支持 flow style（`[]` / `{}`）、块标量（`|` / `>`）与多行字符串等语法。两种失败方式不同：**行内集合不报错，而是被静默忽略**（`allow_commands: [ping]` 会让白名单为空、所有命令被拒；`params: {format: json}` 会让参数根本发不出去）；**块标量会直接报错**（如「YAML 缩进错误」），错误向上传播会让整份配置回退默认值。集合类配置请一律写成块序列 / 块映射。行尾注释方面，`#` 仅在行首或前一位是空格/tab 时才截断，`va#lue` 与引号内的 `#` 都按字面量保留。
 - **三套启动脚本的端口来源不一致**：`start.bat` / `restart.bat` / `stop.bat` 硬编码 8000，忽略 `config.yaml` 的 `server.port`；只有 `start.py` 会读取该配置（且依赖 PyYAML，未安装时静默回退 8000）。`start.bat` 也不调用 `start.py`。
-- **引擎选择不一致**：`start.bat` / `restart.bat` 优先 `gh_upx.exe` 并回退 `gh.exe`；`start.py` 固定使用 `bin/gh.exe`，无 UPX 优先逻辑也无回退。
+- **引擎选择**：`start.bat` / `restart.bat` / `start.py` 都优先 `gh_upx.exe`、缺失时回退 `gh.exe`（本分支仓库只带 `gh_upx.exe`；`gh.exe` 需自行 `go build`）。
 - **没有绿色包打包脚本**：`installer.iss` 是仓库唯一的打包脚本，只产出 `.exe` 安装包；zip 绿色包需自行压缩发行目录。
 - **用量明细会丢最旧记录**：内存最多保留 10000 条并在超出后静默丢弃最旧记录；每 50 条才批量落盘，进程被强杀时最近最多 49 条可能丢失。
 - **CLI 的思考内容是纯文本**：`reasoning_content` 默认折叠成一行 `💭 思考中… N 字`，`/think on` 展开为灰色正文——思考文本内部没有语法着色，重定向到文件时只输出一行汇总（不刷屏）。
 - **联网检索的隐私边界**：引擎不外发问题原文，但**检索词本身仍会暴露关注方向**；搜索引擎或自建服务端的访问日志可以记录这些词。
 - **测试范围有限**：不做真实厂商 API 的端到端测试，也不做真实搜索引擎的在线测试（检索链路使用本地测试替身）。
 - **仓库内提交二进制**：`bin/` 与 `models/*.gguf` 直接纳入版本控制以方便开箱即用。
+- **本分支没有 GUI**：`cli-only` 分支刻意不含 Web 界面与 pywebview 依赖；需要图形界面请切回 `main` 分支。
 
 ---
 

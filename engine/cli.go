@@ -1,6 +1,6 @@
-// 终端 CLI 模式：把桌面 GUI 的能力搬进终端。
+// 终端 CLI 模式：模型切换、检索、用量、密钥管理全在终端里完成。
 //
-// 能做的与 GUI 基本对等：模型切换、多轮对话、流式输出、思考过程折叠、
+// 能力：多轮对话、流式输出、思考过程折叠、
 // 联网检索开关与来源、用量统计、密钥管理、配置查看、中断当前生成。
 // 区别只在于交互形式（文本命令 vs 按钮）。
 //
@@ -207,7 +207,7 @@ func (s *cliSession) bye() {
 	s.println(s.paint(ansiDim, "再见！"))
 }
 
-// prompt 提示符带当前模型与联网状态，等于 GUI 顶部的状态区。
+// prompt 提示符带当前模型与联网状态，一眼可见当前状态。
 func (s *cliSession) prompt() string {
 	web := "关"
 	if s.webSearch {
@@ -311,7 +311,7 @@ func (s *cliSession) cmdHelp() {
 	s.dim("  /exit             退出（Ctrl+C 在生成时只中断当前请求）")
 }
 
-// cmdModels 列出模型，带序号、当前标记与视觉能力，等价 GUI 的模型下拉。
+// cmdModels 列出模型，带序号、当前标记与视觉能力。
 func (s *cliSession) cmdModels() {
 	list := s.engine.Cloud.modelList()
 	s.println(s.paint(ansiBold, "云端模型"))
@@ -533,15 +533,15 @@ func (s *cliSession) cmdWeb(query string) {
 	}
 }
 
-// cmdKey 查看 / 设置 / 清除厂商 Key，等价 GUI 的 🔑 面板。
+// cmdKey 查看 / 设置 / 清除厂商 Key，改完立即生效，不必手改 YAML。
 func (s *cliSession) cmdKey(arg string) {
 	parts := strings.Fields(arg)
-	if len(parts) == 0 {
+	if len(parts) == 0 || (len(parts) == 1 && (parts[0] == "list" || parts[0] == "help")) {
 		s.listKeys()
 		return
 	}
 	if len(parts) != 2 {
-		s.fail("用法: /key <厂商> <密钥|-清除>")
+		s.fail("用法: /key <清单|厂商 密钥|厂商 ->，例如 /key deepseek sk-xxx、/key deepseek -")
 		return
 	}
 	provider, key := parts[0], parts[1]
@@ -602,7 +602,7 @@ func (s *cliSession) listKeys() {
 	s.dim("设置: /key <厂商> <密钥> · 清除: /key <厂商> - · 文件: %s", s.engine.KeysPath)
 }
 
-// cmdUsage 用量统计，等价 GUI 的 📊 面板。
+// cmdUsage 用量统计，按时间桶聚合。
 func (s *cliSession) cmdUsage(arg string) {
 	mode := strings.ToLower(strings.TrimSpace(arg))
 	if mode == "conv" || mode == "conversations" || mode == "session" {
@@ -670,7 +670,7 @@ func (s *cliSession) printConversations() {
 	}
 }
 
-// usageBar 用方块画条形图，与 GUI 的柱状图等价。
+// usageBar 用方块画条形图，一眼看出量级。
 func usageBar(v, peak int64, width int) string {
 	if peak <= 0 || width <= 0 {
 		return ""
@@ -697,7 +697,7 @@ func padLeft(s string, width int) string {
 	return strings.Repeat(" ", width-len(s)) + s
 }
 
-// cmdConfig 打印当前生效配置（等价 GUI 里看不到但排障最常用的那部分）。
+// cmdConfig 打印当前生效配置（排障最常用的那部分）。
 func (s *cliSession) cmdConfig() {
 	cfg := s.engine.Config
 	s.println(s.paint(ansiBold, "服务"))
@@ -793,7 +793,7 @@ func (s *cliSession) chat(text string) {
 	s.println()
 }
 
-// printSources 打印编号来源（等价 GUI 的来源卡片）。
+// printSources 打印编号来源，与响应里的 sources 一一对应。
 func (s *cliSession) printSources(sources []map[string]any) {
 	s.println(s.paint(ansiBold, "来源"))
 	for _, src := range sources {
@@ -804,7 +804,7 @@ func (s *cliSession) printSources(sources []map[string]any) {
 }
 
 // streamReply 流式生成，返回（正文, 来源）。
-// 渲染策略与 GUI 对齐：检索状态行 → 思考折叠（或展开）→ 正文 → 收尾统计。
+// 渲染顺序：检索状态行 → 思考折叠（或展开）→ 正文 → 收尾统计。
 func (s *cliSession) streamReply(messages []map[string]any) (string, []map[string]any) {
 	// 本地 GGUF 模型只输出固定摘要（与 HTTP 路径一致）。
 	if r := s.engine.GGUF.get(localName(s.model)); r != nil {

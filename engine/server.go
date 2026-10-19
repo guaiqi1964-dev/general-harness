@@ -25,7 +25,7 @@ type Engine struct {
 	Agent  *AgentExecutor
 	Search *searchService
 
-	// keys.yaml 覆盖层（GUI / CLI 写入的 Key），变更后热加载，不必重启引擎。
+	// keys.yaml 覆盖层（CLI 写入的 Key），变更后热加载，不必重启引擎。
 	KeysPath string
 	keysMod  time.Time
 	keysSize int64
@@ -125,30 +125,25 @@ func (e *Engine) dispatch(req *httpRequest, w *responseWriter) {
 	}
 	path := req.Path
 	// 统一限流（health 与根路径除外）。
-	// /ui 是静态页面，与 /health、/ 一样豁免限流（否则连续刷新会被 429 挡住）。
-	if path != "/health" && path != "/" && path != "/ui" && !e.rateLimit(req, w) {
+	if path != "/health" && path != "/" && !e.rateLimit(req, w) {
 		return
 	}
 	switch {
-	case path == "/ui":
-		e.handleUI(req, w)
 	case path == "/" || path == "/health":
 		if path == "/health" {
 			w.JSON(200, map[string]any{"status": "ok"})
 		} else {
 			// 说明：旧版这里返回 {"docs":"/docs"}，但引擎从未实现 /docs 路由（实测 404），
 			// 属于误导性字段，v0.3.0 起改为只返回服务标识与版本。
-			// 本次起补上 ui 字段：无 Python 的机器可直接用浏览器打开内置界面。
 			w.JSON(200, map[string]any{
 				"service": "General Harness",
 				"version": engineVersion,
-				"ui":      "/ui",
 			})
 		}
 	case path == "/v1/models":
 		e.handleModels(req, w)
 	case path == "/v1/keys":
-		// 本机 Key 管理：给 GUI / CLI 提供“填 Key 就能用”的入口。
+		// 本机 Key 管理：给 CLI 提供“填 Key 就能用”的入口。
 		e.handleKeys(req, w)
 	case path == "/v1/chat/completions":
 		e.handleChatCompletions(req, w)
@@ -184,9 +179,9 @@ func (e *Engine) corsHeaders() map[string]string {
 		origin = "*"
 	}
 	return map[string]string{
-		"Access-Control-Allow-Origin":      origin,
-		"Access-Control-Allow-Methods":     "GET, POST, OPTIONS",
-		"Access-Control-Allow-Headers":     "Authorization, Content-Type, X-Gateway-Api-Key",
+		"Access-Control-Allow-Origin":  origin,
+		"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+		"Access-Control-Allow-Headers": "Authorization, Content-Type, X-Gateway-Api-Key",
 	}
 }
 
@@ -301,7 +296,7 @@ type chatRequestBody struct {
 }
 
 func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
-	// 每次对话前检查 keys.yaml 是否被 GUI / CLI 改过：改完即生效，无需重启。
+	// 每次对话前检查 keys.yaml 是否被 CLI 改过：改完即生效，无需重启。
 	e.refreshKeysIfChanged()
 	if req.Method != "POST" {
 		w.JSON(405, map[string]any{"error": map[string]any{"message": "Method Not Allowed", "type": "method_not_allowed", "code": 405}})
@@ -465,6 +460,7 @@ func (e *Engine) handleAgentRun(req *httpRequest, w *responseWriter) {
 	}
 	w.JSON(200, res)
 }
+
 // handleAgentLoop 编排多步 Agent 循环：模型决策 → 执行命令 → 回传结果 → 继续。
 func (e *Engine) handleAgentLoop(req *httpRequest, w *responseWriter) {
 	if req.Method != "POST" {

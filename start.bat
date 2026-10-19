@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title General Harness - Start
+title General Harness - Start (CLI)
 cd /d "%~dp0"
 
 set "ENGINE=%~dp0bin\gh_upx.exe"
@@ -11,10 +11,13 @@ if not exist "%ENGINE%" (
     pause & exit /b 1
 )
 
-rem ---- Parse mode arg: default gui (GUI); optional cli / server ----
-set MODE=gui
-if /i "%~1"=="cli"    set MODE=cli
+rem ---- Parse mode arg: default cli; optional server ----
+set MODE=cli
 if /i "%~1"=="server" set MODE=server
+if /i "%~1"=="gui" (
+    echo [WARN] This build is CLI-only ^(no webview/web UI^). Starting the terminal CLI instead.
+    set MODE=cli
+)
 
 rem ---- Load user-level env vars from registry (fresh windows inherit them,
 rem       but stale windows don't; this guarantees the engine always gets them) ----
@@ -23,7 +26,7 @@ for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTPS_PROXY 2^>nul') 
 for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTP_PROXY 2^>nul') do set "HTTP_PROXY=%%a"
 
 echo =============================================
-echo   General Harness - One-click Start
+echo   General Harness - One-click Start (CLI)
 echo   Engine: %ENGINE%
 echo   Port:   %PORT%
 echo   Mode:   %MODE%
@@ -53,38 +56,9 @@ if "%MODE%"=="server" (
     pause
     exit /b 0
 )
-if "%MODE%"=="cli" (
-    echo [MODE] Terminal CLI mode. Type /exit or Ctrl+C to quit.
-    "%ENGINE%" chat
-    exit /b 0
-)
 
-rem ---- Default mode: Webview GUI ----
-set "GUI_UP=0"
-curl -s -o nul -w "%%{http_code}" --max-time 2 "http://127.0.0.1:8765/" > "%TEMP%\gh_gui.txt" 2>nul
-set /p GUIPROBE=<"%TEMP%\gh_gui.txt"
-if "%GUIPROBE%"=="200" set "GUI_UP=1"
-if "%GUI_UP%"=="1" (
-    echo [MODE] GUI already running at http://127.0.0.1:8765
-    start "" "http://127.0.0.1:8765"
-    exit /b 0
-)
-echo [MODE] Starting Webview GUI...
-python --version >nul 2>&1
-if errorlevel 1 goto :browser_ui
-python -c "import webview" >nul 2>&1
-if errorlevel 1 (
-    echo [WARN] Python found but pywebview is missing.
-    goto :browser_ui
-)
-start "General Harness GUI" /D "%~dp0" cmd /k python gui\gui.py --url http://127.0.0.1:%PORT%
-exit /b 0
-
-:browser_ui
-rem ---- No Python (or no pywebview): serve the built-in page from the engine ----
-echo [MODE] Python GUI not available - using the built-in browser UI.
-echo        http://127.0.0.1:%PORT%/ui
-start "" "http://127.0.0.1:%PORT%/ui"
+echo [MODE] Terminal CLI mode. Type /exit or Ctrl+C to quit.
+"%ENGINE%" chat
 exit /b 0
 
 :check_health

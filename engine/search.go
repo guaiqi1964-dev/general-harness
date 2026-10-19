@@ -270,7 +270,7 @@ func (s *searchService) backendNames() []string {
 	return names
 }
 
-// backendsInfo 返回后端清单与就绪状态，供 /v1/search/backends 与 GUI 诊断。
+// backendsInfo 返回后端清单与就绪状态，供 /v1/search/backends 与 CLI 诊断。
 func (s *searchService) backendsInfo() []map[string]any {
 	out := []map[string]any{}
 	for _, n := range s.backendNames() {

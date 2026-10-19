@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// keys.yaml 是 GUI / CLI 写入的 Key 覆盖层，优先级高于 plugins/<厂商>/config.yaml。
+// keys.yaml 是 CLI 写入的 Key 覆盖层，优先级高于 plugins/<厂商>/config.yaml。
 // 单独一个文件的原因：宁可新增一个可删除的覆盖层，也不去改写用户手工维护、
 // 带注释的插件配置（手写 YAML 写回会丢注释，且会破坏 ${ENV_VAR} 写法）。
 const keysFileName = "keys.yaml"
@@ -48,7 +48,7 @@ func writeKeyOverrides(root string, overrides map[string]string) error {
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	b.WriteString("# 由 General Harness 的 GUI / CLI 写入，优先级高于 plugins/<厂商>/config.yaml\n")
+	b.WriteString("# 由 General Harness CLI 写入，优先级高于 plugins/<厂商>/config.yaml\n")
 	b.WriteString("# 删除本文件即可回到插件目录里的 Key 配置\n")
 	for _, name := range names {
 		b.WriteString(name + ": " + quoteYAMLValue(overrides[name]) + "\n")
@@ -136,7 +136,7 @@ func baseKeys(cloud *CloudRegistry) map[string]APIKey {
 }
 
 // refreshKeysIfChanged 在 keys.yaml 变更（含删除）后热加载，
-// 让用户在 GUI / CLI 里改完 Key 不必重启引擎。
+// 让用户在 CLI 里改完 Key 不必重启引擎。
 func (e *Engine) refreshKeysIfChanged() {
 	if e.KeysPath == "" || e.Cloud == nil {
 		return

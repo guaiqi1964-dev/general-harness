@@ -129,4 +129,3 @@ func TestRunAgentLoop(t *testing.T) {
 		t.Errorf("chat calls = %d, want 2", call)
 	}
 }
-

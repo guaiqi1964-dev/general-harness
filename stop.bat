@@ -38,6 +38,6 @@ if "%STOPPED%"=="1" (
 ) else (
     echo [INFO] No running engine detected - port %PORT% is free.
 )
-echo [TIP] GUI window is not closed by this script - close it manually if needed.
+echo [TIP] This build is CLI-only - no separate GUI window to close.
 pause
 exit /b 0

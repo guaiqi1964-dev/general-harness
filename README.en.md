@@ -1,17 +1,22 @@
-# General Harness — Minimalist AI Gateway (v0.3.0)
+# General Harness — Minimalist AI Gateway (CLI)
+
+> **English**: this document | **简体中文**: [README.md](./README.md)
 
 > A ready-to-use local AI gateway: a **single Go binary engine** that unifies
 > **cloud API proxying**, **Ollama protocol compatibility**, **GGUF file
 > parsing**, **web search**, and **guarded Agent command execution**, exposed
-> through a standard HTTP API. Two frontends are provided — a **terminal CLI**
-> and a **Webview GUI** (collapsible Thinking panel). The core engine and the UI
-> are fully decoupled: use the CLI when only the backend is running, and the GUI
-> when both run together.
+> through a standard HTTP API. The only interaction surface is the **terminal
+> CLI** (ANSI color streaming): the whole program is one executable — no Python,
+> no browser, no web interface.
 
-- **Engine**: `bin/gh_upx.exe` (2,056,704 bytes ≈ 1.95 MB) / `bin/gh.exe` (6,433,280 bytes ≈ 6.10 MB) — single file, zero third-party dependencies, ready to run after extraction
+> **This is the `cli-only` branch**: every piece of GUI code has been removed from
+> the mainline (`gui/`, `engine/ui.go`, the built-in `/ui` page, the pywebview
+> dependency and its tests). Only the engine and the terminal remain.
+> The mainline (with GUI) lives on the [main branch](https://github.com/guaiqi1964-dev/general-harness).
+
+- **Version**: `0.3.3-cli` (CLI capabilities are equivalent to mainline v0.3.3: collapsible thinking, usage stats, live config view, key management, backend switching, Ctrl+C interrupts only the current generation, and pipe mode — see [Fixed in v0.3.3](#fixed-in-v033))
+- **Engine**: `bin/gh_upx.exe` (2,065,920 bytes ≈ 2.0 MB) — single file, zero third-party dependencies, ready to run after extraction, no uncompressed copy shipped
 - **Engine source**: `engine/` — pure Go standard library (including a hand-written HTTP layer), no external modules
-- **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; the engine also serves an equivalent built-in page at `GET /ui` (v0.3.1, key panel added in v0.3.2), which `start.bat` opens automatically when Python or pywebview is missing
-- **Version**: `0.3.3` (new in this release: the terminal CLI now matches the desktop GUI — collapsible thinking, usage charts, live config view, key clearing, backend switching, Ctrl+C interrupts only the current generation, and pipe mode — see [Fixed in v0.3.3](#fixed-in-v033); the 🔑 key panel landed in [v0.3.2](#fixed-in-v032); the built-in page and brand icon in [v0.3.1](#fixed-in-v031))
 
 ---
 
@@ -20,13 +25,12 @@
 - [Feature Overview](#feature-overview)
 - [Installation & Quick Start](#installation--quick-start)
   - [Option 1: Windows Installer](#option-1-windows-installer)
-  - [Option 2: Build from Source](#option-2-build-from-source)
+  - [Option 2: Portable ZIP (no installer)](#option-2-portable-zip-no-installer)
   - [One-Click Scripts](#one-click-scripts)
   - [Command Line Startup](#command-line-startup)
   - [Minimal Verification](#minimal-verification)
-- [Three Startup Modes](#three-startup-modes)
+- [Startup Modes](#startup-modes)
 - [Terminal CLI Mode](#terminal-cli-mode)
-- [Webview GUI Mode](#webview-gui-mode)
 - [HTTP API Reference](#http-api-reference)
   - [Unified Chat /v1/chat/completions](#unified-chat-v1chatcompletions)
   - [Agent Command Execution](#agent-command-execution)
@@ -59,7 +63,7 @@
 
 | Capability | Description |
 | --- | --- |
-| 🖥️ **Dual-Mode Frontend** | Terminal CLI (ANSI color streaming) and Webview GUI (native rendering engine, collapsible thinking panel); core decoupled from UI |
+| 🖥️ **Single Terminal Frontend** | Terminal CLI (ANSI color streaming, collapsible thinking, usage charts, key management, search toggle). No Python, no browser, no web interface — the whole program is one exe |
 | ☁️ **Cloud API Proxy** | Plug-and-play OpenAI-compatible providers: DeepSeek / Kimi / Qwen / OpenAI; multiple keys with on-demand selection |
 | 🌐 **Web Search (new in v0.3.0)** | `POST /v1/search`, `GET /v1/search/backends`, and a `web_search` extension field on chat; **disabled by default**; configurable `http_json` backends (e.g. self-hosted SearXNG); no new third-party dependencies |
 | 🤖 **Agent Command Execution** | `POST /v1/agent/run` and `POST /v1/agent/loop` execute host commands under an allow-list plus a dangerous-shell block-list; disabled by default |
@@ -68,8 +72,8 @@
 | 📊 **Usage Statistics** | Time dimension (10 minutes to half a year, or custom range) and conversation dimension (last N sessions); atomic JSON persistence, 10000-record in-memory cap |
 | 🔄 **Automatic Retry** | Exponential backoff retry (up to 3 attempts) for 429, 5xx, and network errors; upstream errors mapped uniformly |
 | 🔒 **Security** | Optional gateway auth (Bearer Token), per-IP sliding-window rate limiting, CORS allowed, keys support environment variable injection, SSRF-guarded page fetching |
-| ⚡ **Extremely Lightweight** | Single 1.95 MB binary (UPX-compressed), zero runtime dependencies; hand-written HTTP layer and YAML subset parser |
-| 🔑 **Key Management** (v0.3.1) | Fill in provider keys from the GUI 🔑 panel, the CLI `/key` command, or `GET/POST /v1/keys`; writes go to `keys.yaml` and are hot-reloaded, deleting it reverts to plugin config |
+| ⚡ **Extremely Lightweight** | Single binary of about 2.0 MB (`bin/gh_upx.exe`, 2,065,920 bytes measured), zero runtime dependencies; hand-written HTTP layer and YAML subset parser |
+| 🔑 **Key Management** | Fill in provider keys from the CLI `/key` command or `GET/POST /v1/keys`; writes go to `keys.yaml` and are hot-reloaded, deleting it reverts to plugin config |
 
 ---
 
@@ -77,17 +81,16 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-Setup-0.3.3.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
+Download `General-Harness-CLI-Setup-0.3.3.exe` (built from `installer.iss` with Inno Setup 6) from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
 
-- `DefaultDirName={autopf}\General Harness` combined with `PrivilegesRequired=lowest` means the default install target is **the current user's program directory**, not a machine-wide one;
-- The installer bundles everything needed (engine binary, config, GUI, sample models);
-- Automatically detects and installs the GUI dependency (pywebview) during installation;
-- Creates Start Menu shortcuts, plus a desktop shortcut **checked by default** since v0.3.1 (the `desktopicon` task no longer carries `Flags: unchecked`);
+- `DefaultDirName={autopf}\General Harness CLI` combined with `PrivilegesRequired=lowest` means **no administrator rights are needed**: the app installs into the current user's program directory (about `%LocalAppData%\Programs\General Harness CLI`) instead of machine-wide `%ProgramFiles%`;
+- The installer bundles `bin\gh_upx.exe`, `config.yaml`, the three launcher scripts, `start.py`, the documentation, the sample GGUF and the four provider plugin configs — with **no Python dependency whatsoever**;
+- Creates **4 Start Menu shortcuts** (CLI / restart / stop / uninstall), plus a desktop shortcut **created by default** (the `desktopicon` task no longer carries `Flags: unchecked`); Start Menu shortcuts are always created;
 - **Brand icon**: the setup program itself, every desktop / Start Menu shortcut, and the uninstall entry all use `assets/general-harness.ico` (9 sizes, 16–256, 32bpp), which is installed to `{app}\general-harness.ico`.
 
-### Option 2: Build from Source
+### Option 2: Portable ZIP (no installer)
 
-There is currently **no portable (ZIP) packaging script** in the repository — the setup script `installer.iss`, the launcher scripts, and `go build` are the supported paths. As of v0.3.0 the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest) additionally ships a ZIP of the release directory built from the same tree; a ZIP you build yourself is not bound to that file name. To run without the installer:
+The engine itself is a single zero-dependency file: copy the release directory anywhere and double-click `start.bat`, or run `bin\gh_upx.exe` directly. The repository ships **no ZIP packaging script** — `installer.iss`, the launcher scripts and `go build` are the supported paths. As of v0.3.0 the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest) also publishes a ZIP of the release directory built from the same tree (e.g. `General-Harness-CLI-v0.3.3.zip`); a ZIP you build yourself is not bound to that file name. To run without the installer:
 
 ```bash
 cd engine
@@ -97,24 +100,26 @@ bin\gh.exe serve
 
 ### One-Click Scripts
 
-The installer and a source checkout both contain three management scripts. Double-click to use:
+The installer and a source checkout both contain three management scripts. Double-click to use; they support exactly two modes, `cli` (default) and `server`:
 
 ```bat
-start.bat              :: One-click start, open Webview GUI
-start.bat cli          :: One-click start, enter terminal CLI
+start.bat              :: One-click start, enter terminal CLI
 start.bat server       :: One-click start, HTTP server only
-restart.bat            :: One-click restart and open GUI
-restart.bat cli        :: One-click restart, enter CLI
+restart.bat            :: One-click restart and enter CLI
 stop.bat               :: One-click stop the engine
 ```
 
 Script features:
 
-- `start.bat` and `restart.bat` prefer `bin\gh_upx.exe` and fall back to `bin\gh.exe`;
+- **Engine selection**: `start.bat` / `restart.bat` / `start.py` all prefer `bin\gh_upx.exe` and fall back to `bin\gh.exe`; `start.py` exits with code 1 when neither exists;
+- **Port source (the three scripts disagree)**: `start.bat` / `restart.bat` / `stop.bat` **hard-code 8000** and never read `config.yaml`, so editing `server.port` has no effect on them; only `start.py` reads `server.port` — and that step needs PyYAML, **silently falling back to 8000 when PyYAML is missing (or parsing fails)**;
+- **`start.bat` does not call `start.py`**: it starts the engine itself with `bin\gh_upx.exe serve --port 8000` (in its own console window), polls `/health` with `curl`, and runs `chat` in the same console once the engine is ready;
 - Probes port health before starting: reuses an already-running engine instead of starting a duplicate;
-- Restart/stop kills the process via `gateway.pid` first, with a `netstat` port-based fallback;
-- Waits for the engine to be ready (polling `/health`, up to 30 seconds) before launching the frontend;
-- With Python, GUI mode opens a native Webview window; without Python (or without pywebview) `start.bat` now opens the engine's built-in `/ui` page instead of stopping with an error (v0.3.1).
+- Restart/stop kills the process via `gateway.pid` first, with a `netstat` / `tasklist` port-and-name fallback;
+- Waits for the engine to be ready (polling `/health`, up to 30 seconds) before entering the CLI;
+- Passing `gui` prints a warning that this build has no GUI and enters the CLI instead — it is never silently ignored.
+
+> Because the port sources disagree, **editing only `server.port` still leaves the `.bat` scripts on 8000**. To switch ports, pass it explicitly: `python start.py --port 9000`, `bin\gh_upx.exe serve --port 9000`, or edit `set PORT=8000` inside the scripts.
 
 ### Command Line Startup
 
@@ -122,14 +127,16 @@ Script features:
 # Terminal CLI mode (recommended to try first)
 python start.py
 
-# Webview GUI mode
-python start.py --gui
-
 # Engine server only (for Open WebUI, etc.)
 python start.py --server
+
+# No Python at all:
+bin\gh_upx.exe            :: enter the terminal CLI
+bin\gh_upx.exe serve      :: start the HTTP service only
 ```
 
 > The engine listens on `http://127.0.0.1:8000` by default; override with `--port <port>`.
+> `start.py` takes its default port from `server.port` in `config.yaml`, but that step needs PyYAML — without it the port silently falls back to 8000.
 > Don't want to use Python? Run `bin\gh_upx.exe serve` directly (zero dependencies).
 
 ### Minimal Verification
@@ -144,7 +151,7 @@ curl http://127.0.0.1:8000/health
 
 # 3) Identify the service and its version
 curl http://127.0.0.1:8000/
-# → {"service":"General Harness","ui":"/ui","version":"0.3.3"}
+# → {"service":"General Harness","version":"0.3.3"}
 
 # 4) List models (includes the bundled local GGUF sample)
 curl http://127.0.0.1:8000/v1/models
@@ -152,12 +159,11 @@ curl http://127.0.0.1:8000/v1/models
 
 ---
 
-## Three Startup Modes
+## Startup Modes
 
 | Command | Mode | Description |
 | --- | --- | --- |
 | `python start.py` | CLI | Auto-starts the engine and enters terminal chat; engine shuts down after Ctrl+C |
-| `python start.py --gui` | GUI | Auto-starts the engine and opens a native Webview window |
 | `python start.py --server` | Server | Starts only the engine HTTP API, stays in the background |
 | `bin\gh_upx.exe serve` | Server | Same as above, no Python needed |
 | `bin\gh_upx.exe` (no args) | CLI | Enters terminal mode directly (engine embedded, no separate server) |
@@ -168,7 +174,7 @@ curl http://127.0.0.1:8000/v1/models
 
 ## Terminal CLI Mode
 
-The engine has a built-in terminal interactive mode (`gh chat` or run `bin\gh_upx.exe` directly):
+The engine has a built-in terminal interactive mode (`gh chat` or run `bin\gh_upx.exe` directly). Since v0.3.3 everything — configuration, retrieval, usage inspection and key management — can be done from the terminal:
 
 ```
 ═══ General Harness CLI ═══
@@ -218,25 +224,6 @@ The prompt shows the current model and the web-search switch. `reasoning_content
 | `models` | Print the model list and exit |
 | `gguf <file.gguf>` | Parse a GGUF file and print JSON metadata |
 | `help` | Show help |
-
----
-
-## Webview GUI Mode
-
-```bash
-python start.py --gui
-# or: python gui/gui.py --url http://127.0.0.1:8000
-```
-
-- **Rendering engine**: prefers pywebview (reuses the native Edge WebView2 on Windows); falls back to the system default browser when pywebview is not installed.
-- **UI capabilities**:
-  - Model dropdown (loads cloud and local models dynamically from `/api/models`);
-  - Streaming typewriter output (SSE);
-  - Collapsible "💭 Thinking" panel (using `<details>`, click to expand/collapse; shown when the model returns `reasoning_content`);
-  - **"🌐 Web" toggle** in the header (see [Web Search](#web-search));
-  - Enter to send, Shift+Enter for newline, clear conversation, status bar hints.
-- **Architecture**: `gui.py` embeds a local proxy (default 127.0.0.1:8765) that forwards the browser's `/v1/*` and `/api/*` requests to the Go engine, avoiding CORS issues; the frontend is a **single embedded file with no external assets** (`INDEX_HTML`, 15317 bytes as measured from `gui/gui.py`).
-- **Dependencies** (optional): `pip install -r gui/requirements.txt` (pywebview>=5.0). The browser fallback still works without it.
 
 ---
 
@@ -447,7 +434,7 @@ Status codes: `400` empty query or unknown backend · `401` gateway auth failure
 }
 ```
 
-`ready` is `false` with a human-readable `reason` when a backend is misconfigured — for example a missing `base_url` (`缺少 base_url`), an unsupported `type`, or an unset environment variable referenced by its headers/params/body. This is the endpoint the GUI probes before enabling its toggle.
+`ready` is `false` with a human-readable `reason` when a backend is misconfigured — for example a missing `base_url` (`缺少 base_url`), an unsupported `type`, or an unset environment variable referenced by its headers/params/body. This is the endpoint to check before turning retrieval on: the CLI's `/search list` reports the same readiness for every backend, and `/search backend <name>` refuses a backend that is not ready.
 
 #### Chat extension field
 
@@ -475,11 +462,12 @@ Behavior:
 - Fetched pages are labeled as **untrusted data** in the injected system context.
 - Content fetching is controlled by `fetch_content`: with the default `false` **only snippets are injected**, and no page is ever fetched.
 
-#### Frontend usage
+#### CLI usage
 
-- **GUI**: the header "🌐 Web" toggle stores its state in `localStorage` and is **off by default**. Before enabling it probes `GET /v1/search/backends` and refuses to turn on when the engine reports 404 (search disabled), a non-OK status, or **no ready backend**. While the toggle is on, the status line shows "searching…" from the moment the request is sent (unconditionally, whether or not the search ends up returning results); once the stream's search phase frame arrives it switches to "found N sources, generating…", and clickable source cards (numbered, opening in a new window with `rel="noopener noreferrer"`) are rendered under the answer.
-- **When the toggle is off, the request body is field-for-field identical to previous versions** — the `web_search` field is simply not added.
-- **CLI**: `/search on|off|status` toggles session retrieval and reports the backend plus query mode; `/web <query>` runs one search without entering the conversation; `/help` lists both commands. Numbered sources are printed under the answer as `[n] title — URL`.
+See [Terminal CLI Mode → Built-in Commands](#built-in-commands): `/search on|off|status`, `/search list`, `/search backend <name>` and `/web <query>`. `/search on` prints the privacy notice once; answers list numbered sources as `[n] title — URL`.
+
+- With retrieval off, the request body is field-for-field identical to previous versions — the `web_search` field is simply not added.
+- The prompt line `You [deepseek-chat | web:off] ›` shows the current switch state at a glance.
 
 #### Cache & concurrency
 
@@ -539,7 +527,7 @@ Groups by session (ordered by last activity, newest first) and sums the tokens o
 - `options.temperature` and `options.num_predict` map to cloud sampling parameters;
 - Local GGUF models return a metadata summary (this engine only parses, it does not infer);
 - **Streaming output is SSE** (`data: {...}` frames, one JSON object per frame: `{"message":{"role":"assistant","content":"…"},"done":false}` … `{"done":true}`) — it is *not* NDJSON, and cloud streams always terminate with a `done:true` frame so Ollama clients stop waiting.
-- **Model naming**: `/api/*` always uses the names returned by `GET /api/tags` — for a local GGUF model that is the **bare name** (e.g. `demo-qwen2`), for cloud models `provider/model`. The `local/<name>` form only works on `/v1/*` (including CLI/GUI); sending it to `/api/chat` yields 404 `未知厂商: local`. Any other name yields 404 `未知模型: xxx`.
+- **Model naming**: `/api/*` always uses the names returned by `GET /api/tags` — for a local GGUF model that is the **bare name** (e.g. `demo-qwen2`), for cloud models `provider/model`. The `local/<name>` form only works on `/v1/*` (including the CLI); sending it to `/api/chat` yields 404 `未知厂商: local`. Any other name yields 404 `未知模型: xxx`.
 
 ### GGUF Metadata Endpoint
 
@@ -566,12 +554,9 @@ Groups by session (ordered by last activity, newest first) and sums the tokens o
 
 ### Root Endpoint
 
-`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.3"}` (not rate-limited)
+`GET /` → `{"service":"General Harness","version":"0.3.3"}` (not rate-limited)
 
-`GET /ui` → the built-in browser UI (HTML, 13,307 bytes embedded via `go:embed`; not rate-limited).
-It matches the desktop GUI feature-for-feature and needs no Python.
-
-The `"ui":"/ui"` field is new in v0.3.1 — `start.bat` opens that URL when Python (or pywebview) is missing.
+The root response carries only the service name and the engine version — there is no web UI entry point, because this branch ships no web interface at all.
 
 The old `"docs":"/docs"` field was misleading — the engine never implemented a `/docs` route — and has been removed in v0.3.0.
 
@@ -670,7 +655,7 @@ models:
    - `gh gguf models/xxx.gguf` (command-line parse);
    - `GET /api/gguf/<name>`;
    - `GET /v1/models` (shown as `local/<name>`);
-   - Select `local/<name>` in CLI / GUI to chat (returns a metadata summary).
+   - Select `local/<name>` in the CLI with `/model local/<name>` and chat with it (returns a metadata summary).
 
 > Note: this engine provides GGUF **parsing** (architecture, context, vocabulary metadata, etc.) but no local inference. For local inference, pair it with llama.cpp or another inference backend.
 
@@ -707,8 +692,7 @@ models:
 General_Harness_Release/
 ├── .gitignore               # Ignores __pycache__, *.pyc, gateway.pid, usage_stats.json, logs, gh-engine.exe, release_assets
 ├── bin/
-│   ├── gh_upx.exe           # Engine (UPX-compressed, 2,056,704 bytes, recommended)
-│   └── gh.exe               # Engine (stripped, 6,433,280 bytes)
+│   └── gh_upx.exe           # Engine (UPX-compressed, 2,065,920 bytes ≈ 2.0 MB — the only shipped binary)
 ├── engine/                  # Go engine source (zero third-party deps)
 │   ├── main.go              # Entry point & subcommand dispatch
 │   ├── server.go            # HTTP routing & all handlers
@@ -727,11 +711,8 @@ General_Harness_Release/
 │   ├── search_chat.go       # web_search integration into chat (query build, injection, sources)
 │   ├── search_chat_test.go  # Chat-side search tests (unchanged / inject / rewrite / degrade / 403)
 │   ├── htmltext.go          # HTML → text extraction, SSRF validation, page fetching
-│   ├── ui.go                # Built-in browser UI handler (/ui)
 │   ├── keys.go              # Key management (/v1/keys, keys.yaml overlay + hot reload)
-│   ├── ui.html              # Built-in UI source (embedded via go:embed)
 │   ├── htmltext_test.go     # Extraction / entity / SSRF / redirect / truncation tests
-│   ├── ui_test.go           # Built-in UI endpoint tests
 │   ├── usage.go             # Usage stats (JSON persistence, 10000-record cap)
 │   ├── config.go            # Config loading & provider registry
 │   ├── yaml.go              # Hand-written YAML subset parser
@@ -741,9 +722,6 @@ General_Harness_Release/
 │   ├── streaming_test.go    # Streaming usage-accounting tests
 │   ├── integration_test.go  # HTTP integration tests
 │   └── go.mod               # Module definition (no external deps)
-├── gui/
-│   ├── gui.py               # Webview GUI (pywebview / browser fallback, embedded proxy)
-│   └── requirements.txt     # GUI dependency (pywebview>=5.0, optional)
 ├── models/
 │   └── demo-qwen2.gguf      # Sample GGUF (for demo)
 ├── plugins/
@@ -755,13 +733,11 @@ General_Harness_Release/
 │   └── general-harness.ico  # Brand icon (9 sizes, 16–256): setup program, shortcuts, uninstall entry
 ├── cli/README.md            # CLI mode notes
 ├── config.yaml              # Global config (server / agent / search / plugins)
-├── installer.iss            # Inno Setup 6 script (desktop shortcut created by default since v0.3.1)
-├── start.py                 # Unified launcher (always uses bin/gh.exe)
-├── start.bat                # One-click start script (prefers gh_upx.exe)
-├── restart.bat              # One-click restart script (prefers gh_upx.exe)
+├── installer.iss            # Inno Setup 6 packaging script (the only packaging script; desktop shortcut created by default)
+├── start.py                 # Optional Python wrapper (prefers gh_upx.exe, falls back to gh.exe)
+├── start.bat                # One-click start script (prefers gh_upx.exe; cli / server only)
+├── restart.bat              # One-click restart script (prefers gh_upx.exe; cli / server only)
 ├── stop.bat                 # One-click stop script
-├── tests/test_gui.py        # GUI / proxy tests
-├── installer.iss            # Inno Setup 6 packaging script (the only packaging script)
 ├── PLAN-v0.2.0.md           # Historical design notes (agent capability)
 ├── PLAN-v0.3.0.md           # v0.3.0 design notes (web search)
 ├── README.md                # Chinese documentation
@@ -789,52 +765,38 @@ The engine source has zero third-party dependencies (pure standard library): a h
 ## Running Tests
 
 ```bash
-# Go engine tests (unit + HTTP integration, 79 test functions)
+# Go engine tests: 99 test functions (unit + HTTP integration + CLI), all green as measured
 cd engine && go test ./... -count=1
-
-# Python component tests (GUI proxy, frontend page, launcher logic)
-python -m unittest discover -s tests
 ```
 
-Measured state of the suite: **101 Go test functions, all green, none skipped** (`go test ./... -count=1` → `ok gh-engine`) — the 33 pre-existing engine / integration / agent tests plus 38 new tests covering web search, HTML extraction, SSRF, chat integration, the built-in `/ui`, and the keep-alive/Content-Length fix (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, `ui_test.go` 2, plus 2 new cases in `cloud_test.go`), plus 8 more for key management (`keys_test.go` 6: override round-trip, YAML quoting, masking, `/v1/keys` write + hot reload, validation, loopback-only; and 2 assertions added to `ui_test.go`). **7 Python tests, all green** (`Ran 7 tests … OK`).
+Measured state (v0.3.3-cli): `go test ./... -count=1` → `ok gh-engine 9.434s`, **PASS 99 / FAIL 0 / SKIP 0**. Distribution: 33 pre-existing tests (`engine_test.go` 9, `integration_test.go` 10, `agent_test.go` 8, `ollama_test.go` 2, `cloud_test.go` 2, `streaming_test.go` 2) + 36 added in v0.3.0 (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, plus 2 new keep-alive regression cases in `cloud_test.go`) + 8 added in v0.3.1/v0.3.2 (`keys_test.go`: override walk-through, YAML quoting, masking, `/v1/keys` write + hot reload, argument validation, non-loopback rejection, base/override merge, `keys.yaml` change detection) + 22 added in v0.3.3 (`cli_test.go`: command parsing, model switching, thinking fold and expand, Ctrl+C interrupt, usage table and conversation list, key set and clear, backend readiness validation, pipe mode, failed requests not recorded in history). The Python suite left with the GUI — Go is the only test surface here.
 
-What is actually covered: YAML parsing, GGUF parsing (including invalid magic), usage stats (time series / conversation aggregation / custom range / persistence), key parsing and multi-key selection, provider registration, model routing, rate limiting (including 429), auth, the Ollama endpoints, streaming & non-streaming accounting, SSE parsing, the hand-written chunked reader plus keep-alive + `Content-Length` framing (with regression tests that fail if the fix is removed), the root endpoint reporting service/version/ui, agent allow-list/block-list/timeout/truncation, search config parsing and keywords, URL normalization and de-duplication, cache and fetch-content behavior, search error mapping, `search.backends` readiness, injected-context building, chat `web_search` (unchanged when absent, context+sources, explicit query, rewrite mode, streaming phase frame, graceful degradation, 403 when disabled), HTML extraction, entity decoding, SSRF rejection, redirect handling and truncation, GUI proxy forwarding, and single-file frontend integrity.
+What is actually covered: YAML parsing, GGUF parsing (including invalid magic), usage stats (time series / conversation aggregation / custom range / persistence), key parsing and multi-key selection, provider registration, model routing, rate limiting (including 429), auth, the Ollama endpoints, streaming & non-streaming accounting, SSE parsing, the hand-written chunked reader plus keep-alive + `Content-Length` framing (with regression tests that fail if the fix is removed), the root endpoint reporting service and version, agent allow-list/block-list/timeout/truncation, search config parsing and keywords, URL normalization and de-duplication, cache and fetch-content behavior, search error mapping, `search.backends` readiness, injected-context building, chat `web_search` (unchanged when absent, context+sources, explicit query, rewrite mode, streaming phase frame, graceful degradation, 403 when disabled), HTML extraction, entity decoding, SSRF rejection, redirect handling and truncation, and the CLI command surface (parsing, model switching, thinking fold, interrupt handling, usage rendering, key management, pipe mode).
 
-**Not covered** (stated honestly): the 429 branch for a saturated `max_concurrent` gate, concurrent multi-goroutine writes to usage stats, and live end-to-end tests against real cloud providers or real search engines — the retrieval chain is exercised against local HTTP test servers, provider calls use injected `ChatHandler`/`StreamHandler` stubs (the real-socket keep-alive + `Content-Length` path does have dedicated regression tests in `cloud_test.go`). Capabilities such as native pywebview window rendering are outside the automated suite.
+**Not covered** (stated honestly): the 429 branch for a saturated `max_concurrent` gate, concurrent multi-goroutine writes to usage stats, and live end-to-end tests against real cloud providers or real search engines — the retrieval chain is exercised against local HTTP test servers, provider calls use injected `ChatHandler`/`StreamHandler` stubs (the real-socket keep-alive + `Content-Length` path does have dedicated regression tests in `cloud_test.go`). This branch ships no GUI, so there is no UI-related test either.
 
 ---
 
 ## Size Design Notes
 
-| Build | Size (measured) |
+| Build | Size (measured bytes) |
 | --- | --- |
-| Engine stripped (`-s -w -buildid=` + trimpath) — `bin/gh.exe` | 6,433,280 bytes (≈ 6.10 MB) |
-| Engine UPX-compressed (`--lzma -9`) — `bin/gh_upx.exe` | 2,056,704 bytes (≈ 1.95 MB) |
-| GUI frontend | Single embedded file, no external assets (`INDEX_HTML`, 14,324 characters / 15,317 bytes) |
+| Engine stripped (`-s -w -buildid=` + trimpath) — intermediate artifact only, **not committed** | 6,458,368 bytes (≈ 6.4 MB) |
+| Engine UPX-compressed (`--lzma -9`) — the **only shipped binary** | `bin/gh_upx.exe` = 2,065,920 bytes (≈ 2.0 MB) |
 
-Design approach: hand-written HTTP layer using only the `net` package (avoiding the ~4 MB `net/http` standard library) + zero third-party dependencies + UPX compression. On Windows, the physical floor for a network-capable Go binary is about 0.72 MB (pure `net` package + UPX extreme); the UPX build here is about 1.95 MB, which remains comfortably lightweight. The engine is a single file with zero runtime dependencies — extract and run.
+Design approach: hand-written HTTP layer using only the `net` package (avoiding the ~4 MB `net/http` standard library) + zero third-party dependencies + UPX compression. On Windows, the physical floor for a network-capable Go binary is about 0.72 MB (pure `net` package + UPX extreme); the UPX build here is about 2.0 MB, which remains comfortably lightweight. The engine is a single file with zero runtime dependencies — extract and run.
+
+> **What this branch saves compared with the mainline**: no embedded `ui.html` (about 18 KB of source, and more once compiled into the binary), no 6.4 MB uncompressed `gh.exe` committed to the repository, and no `gui/` directory or pywebview runtime chain. The release directory is one 2.0 MB exe plus config and scripts.
 
 ---
 
 ## API Keys & Credentials
 
 Before v0.3.1 the only ways to configure a provider key were editing `plugins/<provider>/config.yaml` or setting
-an environment variable (`key: ${DEEPSEEK_API_KEY}`), followed by an engine restart. There are now three
-equivalent channels - **all of them write `keys.yaml` and take effect immediately (hot reload, no restart)**.
+an environment variable (`key: ${DEEPSEEK_API_KEY}`), followed by an engine restart. There are now two
+equivalent channels - **both of them write `keys.yaml` and take effect immediately (hot reload, no restart)**.
 
-### 1. GUI: the 🔑 Keys panel
-
-Click **🔑 密钥 / Keys** in the toolbar. The panel lists every loaded provider and its state:
-
-| State | Meaning |
-| --- | --- |
-| Not configured | Neither `plugins/<provider>/config.yaml` nor the environment provides a usable key; calls return 401 |
-| Configured `sk-a****1234` | A usable key exists; only the first and last 4 characters are echoed |
-| Placeholder (requests will fail) | The plugin still holds a sample placeholder such as `sk-xxxxxx` / `sk-yyyyyy` - non-empty, so it counts as "configured", but any real request will 401. Replace it with a real key |
-
-Paste the key into the row and press Save; the state refreshes immediately and the next chat request uses it.
-
-### 2. CLI: the `/key` command
+### 1. CLI: the `/key` command
 
 ```text
 /key list                         # list providers and their state
@@ -842,7 +804,7 @@ Paste the key into the row and press Save; the state refreshes immediately and t
 /key help
 ```
 
-### 3. HTTP: `GET/POST /v1/keys`
+### 2. HTTP: `GET/POST /v1/keys`
 
 ```bash
 # read state (never returns the full key, only a mask)
@@ -870,11 +832,19 @@ An unknown `provider` returns 404; empty `provider`/`key` returns 400.
 
 ---
 
+## Historical Fixes (from v0.3.0 onward)
+
+> The sections below record fixes made on the mainline, which historically shipped a GUI. **This branch
+> (`cli-only`) has removed every piece of GUI code** — wherever an entry mentions `/ui`, `gui.py`, `ui.html` or
+> pywebview, it describes the mainline as it was at the time. On this branch the corresponding capability either
+> does not exist (the web interface) or exists in terminal-only form (key management, retrieval, usage viewing).
+> The table rows themselves are kept verbatim as a historical record.
+
 ## Fixed in v0.3.3
 
 > Why: the CLI was usable but not comfortable — thinking printed as a bare "…", no usage panel,
-> no way to inspect the live config, no way to stop a runaway answer. This release moves the
-> desktop GUI's capabilities into the terminal.
+> no way to inspect the live config, no way to stop a runaway answer. This release moves
+> those capabilities into the terminal (this branch keeps every one of them).
 
 | Problem | Fix |
 | --- | --- |
@@ -945,13 +915,23 @@ Yes. The engine is a standalone single-file binary:
 - `bin\gh_upx.exe serve` — starts the HTTP service;
 - Run `bin\gh_upx.exe` directly — enters the terminal CLI.
 
-Python is only used in two places: the `start.py` launcher and the Webview GUI mode.
+You don't need Python at all: `start.py` is only an optional wrapper — running `bin\gh_upx.exe` directly is the complete program.
 </details>
 
 <details>
-<summary><b>Is there a portable ZIP?</b></summary>
+<summary><b>Installer or portable ZIP — what is the difference?</b></summary>
 
-Not currently. The repository ships an Inno Setup script (`installer.iss`) and the launcher scripts, but **no ZIP packaging script**. To run without the installer, copy the extracted files or build the engine with `go build` (see [Option 2: Build from Source](#option-2-build-from-source)); the engine itself is a single zero-dependency file.
+First, a fact worth stating: the repository ships **no ZIP packaging script** — `installer.iss` is the only packaging script and it only produces the installer (into `release_assets/`). A "portable ZIP" is just the release directory compressed by hand; this repository does not guarantee its name or contents.
+
+| Installer (.exe, produced by `installer.iss`) | Portable ZIP (.zip, the release directory compressed by hand) |
+| --- | --- |
+| Guided wizard with a choosable install directory | Extract and run, no installation |
+| 4 Start Menu shortcuts; **desktop shortcut created by default** (no `Flags: unchecked`) | No registry writes, no system directories; delete the folder to remove it |
+| Installs no Python dependency at all | Also needs no Python — unzip and run |
+
+> `DefaultDirName={autopf}\General Harness CLI` together with `PrivilegesRequired=lowest`: **installation needs no administrator rights and lands in the current user's directory** (about `%LocalAppData%\Programs\General Harness CLI`), not machine-wide `%ProgramFiles%`.
+
+For regular use the installer is recommended; for a quick trial or a portable setup, compress the release directory yourself.
 </details>
 
 <details>
@@ -962,7 +942,6 @@ Just pick a new port:
 ```bash
 python start.py --port 9000                 # via the launcher
 bin\gh_upx.exe serve --port 9000            # start the engine directly
-python gui/gui.py --url http://127.0.0.1:9000   # point the GUI at the new port
 ```
 
 > Note the port-handling asymmetry: `start.py` reads `server.port` from `config.yaml` (via PyYAML, falling back silently to 8000 when PyYAML is missing), while `start.bat`, `restart.bat` and `stop.bat` **hard-code port 8000 and ignore `server.port`**. Pass `--port` or edit the scripts if you change the configured port.
@@ -971,7 +950,7 @@ python gui/gui.py --url http://127.0.0.1:9000   # point the GUI at the new port
 <details>
 <summary><b>Does `start.bat` call `start.py`?</b></summary>
 
-No. `start.bat` invokes the engine binary directly (`serve --port 8000`, `chat`, or `python gui\gui.py`); it never calls `start.py`. The two launchers are independent paths to the same engine.
+No. `start.bat` invokes the engine binary directly (`serve --port 8000`, then `chat` in the same console); it never calls `start.py`. The two launchers are independent paths to the same engine.
 </details>
 
 ### ⚙️ Configuration & Models
@@ -1000,7 +979,7 @@ Three steps, no code changes:
 1. Set `search.enabled: true` in `config.yaml`;
 2. Make a backend reachable — the bundled example assumes a self-hosted SearXNG at `http://127.0.0.1:8888` **with the `json` output format enabled in SearXNG's `settings.yml`**;
 3. Restart the engine, then verify with `curl http://127.0.0.1:8000/v1/search/backends` (look for `"ready": true`);
-4. Turn it on per request with `"web_search": true`, in the GUI with the "🌐 Web" toggle, or in the CLI with `/search on`.
+4. Turn it on per request with `"web_search": true`, or in the CLI with `/search on`.
 
 Remember the privacy rule: the raw question is never sent — only locally extracted keywords (or terms produced by your own `rewrite_model`).
 </details>
@@ -1012,12 +991,11 @@ Yes. `config.yaml`, `plugins/*/config.yaml`, and `models/*.gguf` are loaded or s
 </details>
 
 <details>
-<summary><b>Why are there two gh.exe files?</b></summary>
+<summary><b>Why is only one gh.exe shipped?</b></summary>
 
-- `gh_upx.exe`: UPX-compressed (2,056,704 bytes ≈ 1.95 MB), smaller, decompresses to memory at runtime;
-- `gh.exe`: regular stripped build (6,433,280 bytes ≈ 6.10 MB), slightly faster startup.
+This branch commits only `bin\gh_upx.exe`: UPX-compressed, 2,065,920 bytes (≈ 2.0 MB), decompressed into memory at runtime.
 
-They are functionally identical; use `gh_upx.exe` day-to-day. `start.bat`/`restart.bat` prefer it and fall back to `gh.exe`; `start.py` always uses `bin\gh.exe` and has no fallback.
+The uncompressed build is a build artifact rather than something we commit — produce it yourself with `go build -ldflags "-s -w -buildid=" -trimpath -o bin/gh.exe .` in `engine/` (6,458,368 bytes ≈ 6.4 MB, slightly faster startup). All launchers (`start.bat`, `restart.bat`, `start.py`) prefer `gh_upx.exe` and fall back to `gh.exe` when it is present; `start.py` exits with code 1 when neither exists.
 </details>
 
 ### 🔌 Integration
@@ -1045,7 +1023,7 @@ curl http://127.0.0.1:8000/api/tags
 - Normal: returns the complete JSON once the request finishes;
 - Streaming (`stream: true`): pushes `content` chunk by chunk over SSE, ending with `data: [DONE]` — lower time-to-first-token, smoother experience;
 - With `web_search`, one extra `phase:"search"` frame carrying `sources` precedes the content chunks;
-- Thinking models additionally return `thinking` (upstream `reasoning_content`) in streaming mode; the **GUI** renders it in a collapsible panel, and the **CLI** folds it into one `💭 思考中… N 字` line (`/think on` expands it as dim grey text; under redirection only a one-line summary is printed) before the answer body.
+- Thinking models additionally return `thinking` (upstream `reasoning_content`) in streaming mode; the CLI folds it into one `💭 思考中… N 字` line (`/think on` expands it as dim grey text; under redirection only a one-line summary is printed) before the answer body.
 </details>
 
 <details>
@@ -1085,17 +1063,6 @@ Check in order:
 </details>
 
 <details>
-<summary><b>The GUI window won't open — what should I do?</b></summary>
-
-Check in order:
-
-1. Confirm Python ≥ 3.10 (`python --version`);
-2. Confirm the engine is ready (`curl http://127.0.0.1:8000/health` returns `{"status":"ok"}`);
-3. Without pywebview it automatically falls back to the system browser (normal degradation); for a native window run `pip install -r gui/requirements.txt`;
-4. If still no window, open `http://127.0.0.1:8765/index.html` directly — the same frontend.
-</details>
-
-<details>
 <summary><b>The engine exits immediately after starting — what should I do?</b></summary>
 
 Usually a port conflict or a config error:
@@ -1108,15 +1075,16 @@ Usually a port conflict or a config error:
 
 ## Known Limitations
 
-- **Windows only**: the repo ships only Windows engine binaries (`bin/gh.exe` / `bin/gh_upx.exe`); macOS/Linux users must build from source (`cd engine && go build`).
+- **Windows only**: the repo ships only the Windows engine binary (`bin/gh_upx.exe`); macOS/Linux users must build from source (`cd engine && go build`).
 - **Never commit real API keys**: in `plugins/*/config.yaml`, prefer `${ENV_VAR}` notation; ensure real keys are not committed to version control.
 - **YAML subset parser**: the hand-written YAML parser does not support flow style (`[]`/`{}`) or multi-line strings — only the shapes this project's config requires.
-- **Binaries in repo**: `bin/` and `models/*.gguf` are committed for out-of-box use; use GitHub Releases to slim the repo if needed.
+- **Binaries in repo**: the engine ships as `bin/gh_upx.exe` only — the uncompressed build is never committed; `models/*.gguf` is committed too, for out-of-box use.
 - **CLI thinking display is text-only**: `reasoning_content` is folded into a single `💭 思考中… N 字` line and expanded with `/think on` in dim grey — there is no syntax coloring inside the thinking text, and under stdout redirection only a one-line summary is printed.
-- **Launcher port handling is inconsistent**: `start.py` reads `server.port` (via PyYAML, silently falling back to 8000 when PyYAML is missing), while `start.bat` / `restart.bat` / `stop.bat` hard-code port 8000 and ignore `server.port`. `start.py` always uses `bin\gh.exe` (no `gh_upx.exe` preference and no fallback); `start.bat` never calls `start.py`.
+- **Launcher port handling is inconsistent**: `start.py` reads `server.port` (via PyYAML, silently falling back to 8000 when PyYAML is missing), while `start.bat` / `restart.bat` / `stop.bat` hard-code port 8000 and ignore `server.port`. All three launchers prefer `gh_upx.exe` and fall back to `gh.exe`, and `start.bat` never calls `start.py`.
 - **Usage records are bounded and batched**: at most 10000 records are kept in memory (oldest silently dropped) and flushed every 50 entries, so a hard kill can lose up to 49 recent records.
-- **No portable packaging**: `installer.iss` (Inno Setup) is the only packaging script; the desktop shortcut is created by default since v0.3.1 (previously unchecked by default and `PrivilegesRequired=lowest` means the default install goes to the current user's program directory.
+- **No portable packaging**: `installer.iss` (Inno Setup) is the only packaging script; the desktop shortcut is created by default (it previously carried `Flags: unchecked`), and `PrivilegesRequired=lowest` means the default install goes to the current user's program directory.
+- **No GUI on this branch**: `cli-only` deliberately contains no web interface and no GUI runtime dependency. Switch back to the `main` branch if you need a graphical frontend.
 
 ---
 
-*General Harness — a minimalist AI gateway. The core engine is fully decoupled from the UI, letting you switch seamlessly between different frontends.*
+*General Harness CLI — a minimalist AI gateway. One Go binary, one terminal: the engine is driven either by its HTTP API or by the built-in CLI, with no UI layer to keep in sync.*

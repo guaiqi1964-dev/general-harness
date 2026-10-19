@@ -7,9 +7,10 @@ set PORT=8000
 if not exist "%ENGINE%" set "ENGINE=%~dp0bin\gh.exe"
 
 rem ---- Parse mode arg: default gui (GUI); optional cli / server ----
-set MODE=gui
+set MODE=cli
 if /i "%~1"=="cli"    set MODE=cli
 if /i "%~1"=="server" set MODE=server
+if /i "%~1"=="gui" (echo [WARN] CLI-only build - starting the terminal CLI instead. & set MODE=cli)
 
 rem ---- Load user-level env vars from registry (guarantees engine gets them) ----
 for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v DEEPSEEK_API_KEY 2^>nul') do set "DEEPSEEK_API_KEY=%%a"
@@ -40,13 +41,7 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% .*LISTENING"') do (
         )
     )
 )
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8765 .*LISTENING"') do (
-    tasklist /fi "PID eq %%p" /fo csv /nh 2>nul | findstr /i "python.exe" >nul
-    if not errorlevel 1 (
-        echo [STOP] Killing old GUI PID %%p
-        taskkill /F /PID %%p >nul 2>&1
-    )
-)
+
 ping -n 2 127.0.0.1 >nul
 
 if not exist "%ENGINE%" (
@@ -77,23 +72,3 @@ if "%MODE%"=="cli" (
     "%ENGINE%" chat
     exit /b 0
 )
-
-rem ---- Default mode: Webview GUI ----
-set "GUI_UP=0"
-curl -s -o nul -w "%%{http_code}" --max-time 2 "http://127.0.0.1:8765/" > "%TEMP%\gh_gui.txt" 2>nul
-set /p GUIPROBE=<"%TEMP%\gh_gui.txt"
-if "%GUIPROBE%"=="200" set "GUI_UP=1"
-if "%GUI_UP%"=="1" (
-    echo [MODE] GUI already running at http://127.0.0.1:8765
-    start "" "http://127.0.0.1:8765"
-    exit /b 0
-)
-echo [MODE] Starting Webview GUI...
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Python not found. GUI mode requires Python 3.10+.
-    echo         Try: restart.bat cli  ^(terminal^)  or  install Python.
-    pause & exit /b 1
-)
-start "General Harness GUI" /D "%~dp0" cmd /k python gui\gui.py --url http://127.0.0.1:%PORT%
-exit /b 0

@@ -78,9 +78,9 @@ func TestGGUFParser(t *testing.T) {
 	path := filepath.Join(dir, "mini.gguf")
 	// 构造最小 GGUF：magic + version + tensor_count + kv_count + 2 个 KV
 	buf := []byte("GGUF")
-	buf = appendU32(buf, 3)    // version
-	buf = appendU64(buf, 0)    // tensor_count
-	buf = appendU64(buf, 2)    // kv_count
+	buf = appendU32(buf, 3) // version
+	buf = appendU64(buf, 0) // tensor_count
+	buf = appendU64(buf, 2) // kv_count
 	buf = appendGGUFString(buf, "general.architecture")
 	buf = appendU32(buf, ggufString)
 	buf = appendGGUFString(buf, "llama")

@@ -60,6 +60,7 @@ func startTestServer(t *testing.T) (string, func()) {
 
 var _ = json.Marshal
 var _ = strings.Contains
+
 func httpGet(t *testing.T, addr, path string) (int, map[string]any) {
 	t.Helper()
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)

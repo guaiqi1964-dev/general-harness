@@ -88,13 +88,13 @@ func loadGlobalConfig(path string) *GlobalConfig {
 
 // Provider 云端厂商。
 type Provider struct {
-	Name       string
-	BaseURL    string
-	Models     []string
-	Vision     map[string]bool
-	Keys       []APIKey
+	Name    string
+	BaseURL string
+	Models  []string
+	Vision  map[string]bool
+	Keys    []APIKey
 	// 可替换的调用实现（默认走 postJSON/postStream；测试可注入桩）。
-	ChatHandler   func(p *Provider, model string, messages []map[string]any,
+	ChatHandler func(p *Provider, model string, messages []map[string]any,
 		keySelector string, temperature *float64, maxTokens *int, topP *float64,
 		streamOptions map[string]any) (map[string]any, error)
 	StreamHandler func(p *Provider, model string, messages []map[string]any,

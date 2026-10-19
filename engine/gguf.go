@@ -12,27 +12,27 @@ import (
 )
 
 const (
-	ggufUint8 = 0
-	ggufInt8  = 1
-	ggufUint16 = 2
-	ggufInt16 = 3
-	ggufUint32 = 4
-	ggufInt32 = 5
+	ggufUint8   = 0
+	ggufInt8    = 1
+	ggufUint16  = 2
+	ggufInt16   = 3
+	ggufUint32  = 4
+	ggufInt32   = 5
 	ggufFloat32 = 6
-	ggufBool = 7
-	ggufString = 8
-	ggufArray = 9
-	ggufUint64 = 10
-	ggufInt64 = 11
+	ggufBool    = 7
+	ggufString  = 8
+	ggufArray   = 9
+	ggufUint64  = 10
+	ggufInt64   = 11
 	ggufFloat64 = 12
 )
 
 // GGUFReader 一个 GGUF 文件的元数据。
 type GGUFReader struct {
-	Path         string
-	Version      uint32
-	TensorCount  uint64
-	Metadata     map[string]any
+	Path        string
+	Version     uint32
+	TensorCount uint64
+	Metadata    map[string]any
 }
 
 func openGGUF(path string) (*GGUFReader, error) {

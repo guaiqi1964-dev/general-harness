@@ -77,10 +77,10 @@ func TestParseUsageDeepSeekFormat(t *testing.T) {
 	}
 	// 普通流式块 usage 为 null → parseUsage 应返回 nil
 	normalChunk := map[string]any{
-		"id":    "s1",
+		"id":      "s1",
 		"choices": []any{map[string]any{"index": float64(0), "delta": map[string]any{"content": "你"}, "finish_reason": nil}},
-		"usage": nil,
-		"model": "deepseek-chat",
+		"usage":   nil,
+		"model":   "deepseek-chat",
 	}
 	if pu := parseUsage(normalChunk); pu != nil {
 		t.Errorf("parseUsage(usage=null) = %v, want nil", pu)

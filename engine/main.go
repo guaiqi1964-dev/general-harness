@@ -2,10 +2,11 @@
 // 单二进制，零第三方依赖（纯 Go 标准库）。
 //
 // 子命令：
-//   gh serve             启动 HTTP API 服务（供 CLI/GUI 连接）
-//   gh chat              终端 CLI 模式（交互对话，ANSI 思考展示）
-//   gh models            列出可用模型
-//   gh gguf <file>       解析 GGUF 文件元数据
+//
+//	gh serve             启动 HTTP API 服务（供客户端连接）
+//	gh chat              终端 CLI 模式（交互对话，ANSI 思考展示）
+//	gh models            列出可用模型
+//	gh gguf <file>       解析 GGUF 文件元数据
 package main
 
 import (

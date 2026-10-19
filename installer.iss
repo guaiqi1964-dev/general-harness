@@ -1,7 +1,8 @@
-; General Harness v0.3.0 Windows installer script (Inno Setup 6)
+; General Harness v0.3.3 Windows installer script (Inno Setup 6) — CLI-only branch
 ; Build: ISCC.exe installer.iss
+; 本分支不含 GUI（无 pywebview、无 /ui 页面、无 gui/ 目录），安装后即用终端。
 
-#define MyAppName "General Harness"
+#define MyAppName "General Harness (CLI)"
 #define MyAppVersion "0.3.3"
 #define MyAppFileVersion "0.3.3.0"
 #define MyAppPublisher "GQ's Lab"
@@ -10,17 +11,18 @@
 
 [Setup]
 AppId={#MyAppId}
-AppName={#MyAppName}
+AppName=General Harness
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\General Harness
-DefaultGroupName=General Harness
+DefaultDirName={autopf}\General Harness CLI
+DefaultGroupName=General Harness CLI
 DisableProgramGroupPage=no
 UninstallDisplayIcon={app}\general-harness.ico
 Compression=lzma2/max
 SolidCompression=yes
 OutputDir=release_assets
-OutputBaseFilename=General-Harness-Setup-{#MyAppVersion}
+OutputBaseFilename=General-Harness-CLI-Setup-{#MyAppVersion}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
@@ -31,7 +33,7 @@ WizardStyle=modern
 DefaultDialogFontName=Microsoft YaHei UI
 VersionInfoVersion={#MyAppFileVersion}
 VersionInfoProductName={#MyAppName}
-; 安装程序自身的 exe 图标（用户双击安装包时看到的第一印象）
+; 安装程序自身的 exe 图标
 SetupIconFile=assets\general-harness.ico
 SetupLogging=yes
 
@@ -43,18 +45,16 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create desktop shortcut"; GroupDescription: "Additional tasks:"
 
 [Files]
+; 只发布 UPX 压缩版：未压缩的 gh.exe 有 6.4 MB，对纯 CLI 发行版没有价值。
 Source: "bin\gh_upx.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
-Source: "bin\gh.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "config.yaml"; DestDir: "{app}"; Flags: ignoreversion
-Source: "start.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "restart.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "stop.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "start.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.en.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "cli\README.md"; DestDir: "{app}\cli"; Flags: ignoreversion
-Source: "gui\gui.py"; DestDir: "{app}\gui"; Flags: ignoreversion
-Source: "gui\requirements.txt"; DestDir: "{app}\gui"; Flags: ignoreversion
 Source: "models\*.gguf"; DestDir: "{app}\models"; Flags: ignoreversion
 Source: "assets\general-harness.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "plugins\deepseek\config.yaml"; DestDir: "{app}\plugins\deepseek"; Flags: ignoreversion
@@ -62,19 +62,16 @@ Source: "plugins\kimi\config.yaml"; DestDir: "{app}\plugins\kimi"; Flags: ignore
 Source: "plugins\openai\config.yaml"; DestDir: "{app}\plugins\openai"; Flags: ignoreversion
 Source: "plugins\qwen\config.yaml"; DestDir: "{app}\plugins\qwen"; Flags: ignoreversion
 
-
 [Icons]
-Name: "{group}\General Harness (GUI)"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"
-Name: "{group}\General Harness (CLI)"; Filename: "{app}\start.bat"; Parameters: "cli"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"
+Name: "{group}\General Harness CLI"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"
 Name: "{group}\Restart Engine"; Filename: "{app}\restart.bat"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"
 Name: "{group}\Stop Engine"; Filename: "{app}\stop.bat"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"
-Name: "{group}\Uninstall General Harness"; Filename: "{uninstallexe}"; IconFilename: "{app}\general-harness.ico"
-Name: "{autodesktop}\General Harness"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"; Tasks: desktopicon
+Name: "{group}\Uninstall General Harness CLI"; Filename: "{uninstallexe}"; IconFilename: "{app}\general-harness.ico"
+Name: "{autodesktop}\General Harness CLI"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"; Tasks: desktopicon
 
 [Run]
-; Auto-detect Python and install GUI deps (optional; silent failure does not block install)
-Filename: "{cmd}"; Parameters: "/c ""python --version >nul 2>&1 && python -m pip install -r ""{app}\gui\requirements.txt"" -q || echo [General Harness] Python not found - the built-in browser UI (/ui) will be used"""; Flags: runhidden; StatusMsg: "Configuring GUI dependency (pywebview)..."
-Filename: "{app}\start.bat"; Description: "Launch General Harness now"; Flags: nowait postinstall skipifsilent
+; 不再安装任何 Python 依赖：CLI 是本分支唯一前端，go 引擎自带终端界面。
+Filename: "{app}\start.bat"; Description: "Launch General Harness CLI now"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\gateway.pid"
