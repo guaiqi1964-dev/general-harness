@@ -52,8 +52,7 @@ if "%HEALTHY%"=="1" (
 )
 
 if "%MODE%"=="server" (
-    echo [MODE] Server-only mode. Engine runs in its own window.
-    pause
+    echo [MODE] Server-only mode. Engine runs in its own window; close it to stop.
     exit /b 0
 )
 

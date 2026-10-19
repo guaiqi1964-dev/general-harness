@@ -6,7 +6,7 @@ set "ENGINE=%~dp0bin\gh_upx.exe"
 set PORT=8000
 if not exist "%ENGINE%" set "ENGINE=%~dp0bin\gh.exe"
 
-rem ---- Parse mode arg: default gui (GUI); optional cli / server ----
+rem ---- Parse mode arg: default cli; optional server ----
 set MODE=cli
 if /i "%~1"=="cli"    set MODE=cli
 if /i "%~1"=="server" set MODE=server
@@ -63,8 +63,7 @@ if not "!CODE!"=="200" ( ping -n 2 127.0.0.1 >nul & goto :wait_loop )
 echo [DONE] Engine restarted at http://127.0.0.1:%PORT%
 
 if "%MODE%"=="server" (
-    echo [MODE] Server-only mode. Engine runs in its own window.
-    pause
+    echo [MODE] Server-only mode. Engine runs in its own window; close it to stop.
     exit /b 0
 )
 if "%MODE%"=="cli" (
