@@ -10,8 +10,8 @@
 
 - **Engine**: `bin/gh_upx.exe` (2,056,704 bytes ≈ 1.95 MB) / `bin/gh.exe` (6,433,280 bytes ≈ 6.10 MB) — single file, zero third-party dependencies, ready to run after extraction
 - **Engine source**: `engine/` — pure Go standard library (including a hand-written HTTP layer), no external modules
-- **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; the engine also serves an equivalent built-in page at `GET /ui` (v0.3.1), which `start.bat` opens automatically when Python or pywebview is missing
-- **Version**: `0.3.1` (new in this release: the built-in browser UI `GET /ui`, plus the fixes listed under [Fixed in v0.3.1](#fixed-in-v031))
+- **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; the engine also serves an equivalent built-in page at `GET /ui` (v0.3.1, key panel added in v0.3.2), which `start.bat` opens automatically when Python or pywebview is missing
+- **Version**: `0.3.2` (new in this release: the 🔑 key panel is now part of the built-in page `GET /ui`, so users without Python can paste a provider key there too — see [Fixed in v0.3.2](#fixed-in-v032); the built-in page itself landed in [v0.3.1](#fixed-in-v031))
 
 ---
 
@@ -47,6 +47,7 @@
 - [Running Tests](#running-tests)
 - [Size Design Notes](#size-design-notes)
 - [API Keys & Credentials](#api-keys--credentials)
+- [Fixed in v0.3.2](#fixed-in-v032)
 - [Fixed in v0.3.1](#fixed-in-v031)
 - [Fixed in v0.3.0](#fixed-in-v030)
 - [FAQ](#faq)
@@ -75,7 +76,7 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-Setup-0.3.1.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
+Download `General-Harness-Setup-0.3.2.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
 
 - `DefaultDirName={autopf}\General Harness` combined with `PrivilegesRequired=lowest` means the default install target is **the current user's program directory**, not a machine-wide one;
 - The installer bundles everything needed (engine binary, config, GUI, sample models);
@@ -142,7 +143,7 @@ curl http://127.0.0.1:8000/health
 
 # 3) Identify the service and its version
 curl http://127.0.0.1:8000/
-# → {"service":"General Harness","ui":"/ui","version":"0.3.1"}
+# → {"service":"General Harness","ui":"/ui","version":"0.3.2"}
 
 # 4) List models (includes the bundled local GGUF sample)
 curl http://127.0.0.1:8000/v1/models
@@ -549,7 +550,7 @@ Groups by session (ordered by last activity, newest first) and sums the tokens o
 
 ### Root Endpoint
 
-`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.1"}` (not rate-limited)
+`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.2"}` (not rate-limited)
 
 `GET /ui` → the built-in browser UI (HTML, 13,307 bytes embedded via `go:embed`; not rate-limited).
 It matches the desktop GUI feature-for-feature and needs no Python.
@@ -779,7 +780,7 @@ cd engine && go test ./... -count=1
 python -m unittest discover -s tests
 ```
 
-Measured state of the suite: **71 Go test functions, all green, none skipped** (`go test ./... -count=1` → `ok gh-engine`) — the 33 pre-existing engine / integration / agent tests plus 38 new tests covering web search, HTML extraction, SSRF, chat integration, the built-in `/ui`, and the keep-alive/Content-Length fix (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, `ui_test.go` 2, plus 2 new cases in `cloud_test.go`). **7 Python tests, all green** (`Ran 7 tests … OK`).
+Measured state of the suite: **79 Go test functions, all green, none skipped** (`go test ./... -count=1` → `ok gh-engine`) — the 33 pre-existing engine / integration / agent tests plus 38 new tests covering web search, HTML extraction, SSRF, chat integration, the built-in `/ui`, and the keep-alive/Content-Length fix (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, `ui_test.go` 2, plus 2 new cases in `cloud_test.go`), plus 8 more for key management (`keys_test.go` 6: override round-trip, YAML quoting, masking, `/v1/keys` write + hot reload, validation, loopback-only; and 2 assertions added to `ui_test.go`). **7 Python tests, all green** (`Ran 7 tests … OK`).
 
 What is actually covered: YAML parsing, GGUF parsing (including invalid magic), usage stats (time series / conversation aggregation / custom range / persistence), key parsing and multi-key selection, provider registration, model routing, rate limiting (including 429), auth, the Ollama endpoints, streaming & non-streaming accounting, SSE parsing, the hand-written chunked reader plus keep-alive + `Content-Length` framing (with regression tests that fail if the fix is removed), the root endpoint reporting service/version/ui, agent allow-list/block-list/timeout/truncation, search config parsing and keywords, URL normalization and de-duplication, cache and fetch-content behavior, search error mapping, `search.backends` readiness, injected-context building, chat `web_search` (unchanged when absent, context+sources, explicit query, rewrite mode, streaming phase frame, graceful degradation, 403 when disabled), HTML extraction, entity decoding, SSRF rejection, redirect handling and truncation, GUI proxy forwarding, and single-file frontend integrity.
 
@@ -850,6 +851,20 @@ An unknown `provider` returns 404; empty `provider`/`key` returns 400.
 - Security: `/v1/keys` only accepts **loopback** callers (403 otherwise) and is exempt from `gateway_api_key` - it is the credential bootstrap endpoint. Never expose the engine to the public internet.
 
 > `keys.yaml` stores keys in **plaintext** (same as `plugins/*/config.yaml`). It is more convenient than environment variables but should not be shared; use `${ENV_VAR}` when you need stronger separation.
+
+---
+
+## Fixed in v0.3.2
+
+> Why: a user installed v0.3.1 in a **Python-free Windows Sandbox** — the built-in page opened and chat worked,
+> but there was **nowhere to paste an API key** (the 🔑 panel in `gui.py` only exists in the desktop GUI).
+
+| Problem | Fix |
+| --- | --- |
+| The built-in page `/ui` had no key entry, so Python-free users were stuck with placeholder keys or hand-editing YAML | `engine/ui.html` gained a 🔑 key panel that reads/writes `keys.yaml` through `GET/POST /v1/keys`, matching the desktop GUI and CLI `/key` |
+| No feedback after saving | On success the panel echoes a mask like `sk-p****abcd` and states "takes effect immediately"; the engine hot-reloads, no restart needed |
+| The panel could silently break | `engine/ui_test.go` now asserts the page contains `id="keys"`, `id="keysPanel"`, `id="keysList"`, `loadKeys`, `toggleKeys` and `/v1/keys` |
+| Version lagged behind capability | `engineVersion` bumped to `0.3.2`; installer and READMEs follow |
 
 ---
 

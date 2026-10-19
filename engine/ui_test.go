@@ -94,6 +94,13 @@ func TestBuiltinUIPage(t *testing.T) {
 			t.Fatalf("内置页面缺少 UI 元素 %q", want)
 		}
 	}
+	// 密钥面板：无 Python 的用户同样要能在页面里粘贴 API Key，
+	// 不能只有 gui.py 有这个入口（否则装完仍然要去手改 YAML）。
+	for _, want := range []string{`id="keys"`, `id="keysPanel"`, `id="keysList"`, "function loadKeys", "function toggleKeys", "/v1/keys"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("内置页面缺少密钥面板要素 %q", want)
+		}
+	}
 
 	// 非 GET 方法应拒绝。
 	if st, _, _ := httpRaw(t, addr, "POST", "/ui"); st != 405 {

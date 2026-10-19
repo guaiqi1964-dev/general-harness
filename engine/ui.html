@@ -40,6 +40,14 @@ button.active { background:var(--accent); color:#fff; border-color:var(--accent)
 .usage-row span:nth-child(1) { flex:1; word-break:break-all; color:var(--muted); }
 .usage-row span:nth-child(3) { color:var(--accent); white-space:nowrap; }
 .usage-total { margin-top:8px; font-weight:bold; color:var(--accent); }
+#keysPanel { margin:0 16px 12px; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 14px; max-height:45vh; overflow-y:auto; }
+#keysPanel .usage-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-weight:bold; }
+#keysPanel .usage-head button { padding:2px 8px; }
+.keys-row { display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:13px; }
+.keys-row .pname { width:96px; color:var(--accent); }
+.keys-row .pstate { width:170px; color:var(--muted); font-size:12px; }
+.keys-row input { flex:1; min-width:120px; }
+.keys-row button { white-space:nowrap; }
 .hint { color:var(--muted); font-size:12px; }
 .sources { margin-top:10px; border-top:1px solid var(--border); padding-top:8px;
         display:flex; flex-direction:column; gap:6px; }
@@ -61,6 +69,7 @@ a.src .host { color:var(--muted); font-size:12px; white-space:nowrap; }
   <input id="gwkey" type="password" placeholder="网关 Key（可选）" title="设置 gateway_api_key 后需填写，保存在本机 localStorage">
   <button id="deep">🧠 深度思考</button>
   <button id="web" title="开启后由引擎先做一次联网检索，再把带来源的资料交给模型">🌐 联网</button>
+  <button id="keys" title="在这里直接粘贴各厂商的 API Key，保存后立即生效（无需重启、无需改 YAML）">🔑 密钥</button>
   <button id="usage">📊 用量</button>
   <button id="refresh">刷新</button>
   <button id="clear">清空</button>
@@ -69,6 +78,11 @@ a.src .host { color:var(--muted); font-size:12px; white-space:nowrap; }
   <div class="usage-head"><span>📊 Token 用量统计</span><button id="usageClose">✕</button></div>
   <div class="usage-subhead">历史对话</div>
   <div id="usageBody"></div>
+</div>
+<div id="keysPanel" hidden>
+  <div class="usage-head"><span>🔑 API 密钥</span><button id="keysClose">✕</button></div>
+  <div class="hint" style="margin-bottom:8px">粘贴各厂商的 API Key 后点「保存」，引擎会写入 keys.yaml 并立即热加载，无需重启、无需设置环境变量。Key 只保存在本机，不会上传。</div>
+  <div id="keysList"></div>
 </div>
 <div id="chat"></div>
 <div id="status">就绪</div>
@@ -82,6 +96,7 @@ const chat = $('#chat'), modelSel = $('#model'), input = $('#input');
 const statusEl = $('#status'), sendBtn = $('#send');
 const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody'), gwkeyInput = $('#gwkey');
 const webBtn = $('#web');
+const keysBtn = $('#keys'), keysPanel = $('#keysPanel'), keysList = $('#keysList');
 let history = [];
 let deepThinking = false;
 let webSearch = localStorage.getItem('websearch') === '1';
@@ -140,6 +155,48 @@ async function loadUsage() {
   } catch(e) {
     statusEl.textContent = '用量加载失败：' + e.message;
   }
+}
+async function loadKeys() {
+  try {
+    const r = await fetch('/v1/keys', {headers: authHeaders()});
+    const d = await r.json();
+    if (!r.ok) throw new Error((d.error && d.error.message) || '加载失败');
+    if (!d.providers || !d.providers.length) { keysList.innerHTML = '<div class="hint">没有可用厂商</div>'; return; }
+    keysList.innerHTML = d.providers.map(p => {
+      const state = p.placeholder ? '占位符（请求会失败）' : (p.configured ? '已配置 ' + (p.masked || '') : '未配置');
+      return '<div class="keys-row" data-p="' + escAttr(p.name) + '">' +
+        '<span class="pname">' + esc(p.name) + '</span>' +
+        '<span class="pstate">' + esc(state) + '</span>' +
+        '<input type="password" placeholder="粘贴 ' + escAttr(p.name) + ' 的 API Key" autocomplete="off">' +
+        '<button class="save">保存</button></div>';
+    }).join('');
+    keysList.querySelectorAll('.keys-row').forEach(row => {
+      const btn = row.querySelector('.save'), inp = row.querySelector('input');
+      btn.onclick = async () => {
+        const key = inp.value.trim();
+        if (!key) { statusEl.textContent = '请先粘贴 Key'; return; }
+        btn.disabled = true;
+        try {
+          const r2 = await fetch('/v1/keys', {method:'POST', headers: authHeaders(),
+            body: JSON.stringify({provider: row.dataset.p, key})});
+          const d2 = await r2.json();
+          if (!r2.ok) throw new Error((d2.error && d2.error.message) || '保存失败');
+          statusEl.textContent = row.dataset.p + ' 的 Key 已保存（' + d2.masked + '），立即生效';
+          inp.value = '';
+          await loadKeys();
+        } catch(e) { statusEl.textContent = '保存失败: ' + e.message; }
+        finally { btn.disabled = false; }
+      };
+    });
+  } catch(e) {
+    keysList.innerHTML = '<div class="hint">加载失败: ' + esc(e.message) + '</div>';
+  }
+}
+function toggleKeys() {
+  const open = keysPanel.hidden;
+  keysPanel.hidden = !open;
+  keysBtn.classList.toggle('active', open);
+  if (open) loadKeys();
 }
 function addMsg(role, text, thinking) {
   const div = document.createElement('div');
@@ -271,6 +328,8 @@ $('#deep').onclick = toggleDeep;
 $('#web').onclick = toggleWeb;
 $('#usage').onclick = loadUsage;
 $('#usageClose').onclick = () => { usagePanel.hidden = true; };
+$('#keys').onclick = toggleKeys;
+$('#keysClose').onclick = () => { keysPanel.hidden = true; keysBtn.classList.remove('active'); };
 gwkeyInput.value = localStorage.getItem('gwkey') || '';
 gwkeyInput.onchange = () => { localStorage.setItem('gwkey', gwkeyInput.value.trim()); loadModels(); if (!usagePanel.hidden) loadUsage(); };
 input.addEventListener('keydown', e => {
