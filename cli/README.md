@@ -10,6 +10,8 @@
 | `/models` | 列出可用模型（云端与本地 GGUF） |
 | `/search [on\|off\|status]` | 联网检索开关；不带参数等于 `status`。开关仅影响当前会话，配置文件里 `search.enabled=false` 时无法开启 |
 | `/web <检索词>` | 单次联网检索并打印编号来源，不影响会话开关 |
+| `/key list` | 列出厂商及其 Key 配置状态（只回显掩码，不打印完整 Key） |
+| `/key set <厂商> <Key>` | 写入该厂商的 Key 到 `keys.yaml`，**立即生效**（热加载，无需重启引擎） |
 | `/clear` | 清空当前会话上下文 |
 | `/help` | 显示帮助 |
 | `/exit`、`/quit` | 退出 |

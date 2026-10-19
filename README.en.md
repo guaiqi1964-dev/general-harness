@@ -8,7 +8,7 @@
 > are fully decoupled: use the CLI when only the backend is running, and the GUI
 > when both run together.
 
-- **Engine**: `bin/gh_upx.exe` (2,043,904 bytes ≈ 1.95 MB) / `bin/gh.exe` (6,394,368 bytes ≈ 6.10 MB) — single file, zero third-party dependencies, ready to run after extraction
+- **Engine**: `bin/gh_upx.exe` (2,056,704 bytes ≈ 1.95 MB) / `bin/gh.exe` (6,433,280 bytes ≈ 6.10 MB) — single file, zero third-party dependencies, ready to run after extraction
 - **Engine source**: `engine/` — pure Go standard library (including a hand-written HTTP layer), no external modules
 - **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; the engine also serves an equivalent built-in page at `GET /ui` (v0.3.1), which `start.bat` opens automatically when Python or pywebview is missing
 - **Version**: `0.3.1` (new in this release: the built-in browser UI `GET /ui`, plus the fixes listed under [Fixed in v0.3.1](#fixed-in-v031))
@@ -46,6 +46,8 @@
 - [Building from Source](#building-from-source)
 - [Running Tests](#running-tests)
 - [Size Design Notes](#size-design-notes)
+- [API Keys & Credentials](#api-keys--credentials)
+- [Fixed in v0.3.1](#fixed-in-v031)
 - [Fixed in v0.3.0](#fixed-in-v030)
 - [FAQ](#faq)
 
@@ -65,6 +67,7 @@
 | 🔄 **Automatic Retry** | Exponential backoff retry (up to 3 attempts) for 429, 5xx, and network errors; upstream errors mapped uniformly |
 | 🔒 **Security** | Optional gateway auth (Bearer Token), per-IP sliding-window rate limiting, CORS allowed, keys support environment variable injection, SSRF-guarded page fetching |
 | ⚡ **Extremely Lightweight** | Single 1.95 MB binary (UPX-compressed), zero runtime dependencies; hand-written HTTP layer and YAML subset parser |
+| 🔑 **Key Management** (v0.3.1) | Fill in provider keys from the GUI 🔑 panel, the CLI `/key` command, or `GET/POST /v1/keys`; writes go to `keys.yaml` and are hot-reloaded, deleting it reverts to plugin config |
 
 ---
 
@@ -77,7 +80,8 @@ Download `General-Harness-Setup-0.3.1.exe` from the [Releases page](https://gith
 - `DefaultDirName={autopf}\General Harness` combined with `PrivilegesRequired=lowest` means the default install target is **the current user's program directory**, not a machine-wide one;
 - The installer bundles everything needed (engine binary, config, GUI, sample models);
 - Automatically detects and installs the GUI dependency (pywebview) during installation;
-- Creates Start Menu shortcuts, and offers a desktop shortcut as an **additional task that is unchecked by default** (`Flags: unchecked`).
+- Creates Start Menu shortcuts, plus a desktop shortcut **checked by default** since v0.3.1 (the `desktopicon` task no longer carries `Flags: unchecked`);
+- **Brand icon**: the setup program itself, every desktop / Start Menu shortcut, and the uninstall entry all use `assets/general-harness.ico` (9 sizes, 16–256, 32bpp), which is installed to `{app}\general-harness.ico`.
 
 ### Option 2: Build from Source
 
@@ -686,8 +690,8 @@ models:
 General_Harness_Release/
 ├── .gitignore               # Ignores __pycache__, *.pyc, gateway.pid, usage_stats.json, logs, gh-engine.exe, release_assets
 ├── bin/
-│   ├── gh_upx.exe           # Engine (UPX-compressed, 2,043,904 bytes, recommended)
-│   └── gh.exe               # Engine (stripped, 6,394,368 bytes)
+│   ├── gh_upx.exe           # Engine (UPX-compressed, 2,056,704 bytes, recommended)
+│   └── gh.exe               # Engine (stripped, 6,433,280 bytes)
 ├── engine/                  # Go engine source (zero third-party deps)
 │   ├── main.go              # Entry point & subcommand dispatch
 │   ├── server.go            # HTTP routing & all handlers
@@ -707,6 +711,7 @@ General_Harness_Release/
 │   ├── search_chat_test.go  # Chat-side search tests (unchanged / inject / rewrite / degrade / 403)
 │   ├── htmltext.go          # HTML → text extraction, SSRF validation, page fetching
 │   ├── ui.go                # Built-in browser UI handler (/ui)
+│   ├── keys.go              # Key management (/v1/keys, keys.yaml overlay + hot reload)
 │   ├── ui.html              # Built-in UI source (embedded via go:embed)
 │   ├── htmltext_test.go     # Extraction / entity / SSRF / redirect / truncation tests
 │   ├── ui_test.go           # Built-in UI endpoint tests
@@ -729,9 +734,11 @@ General_Harness_Release/
 │   ├── kimi/config.yaml
 │   ├── openai/config.yaml
 │   └── qwen/config.yaml
+├── assets/
+│   └── general-harness.ico  # Brand icon (9 sizes, 16–256): setup program, shortcuts, uninstall entry
 ├── cli/README.md            # CLI mode notes
 ├── config.yaml              # Global config (server / agent / search / plugins)
-├── installer.iss            # Inno Setup 6 script (desktop icon unchecked by default)
+├── installer.iss            # Inno Setup 6 script (desktop shortcut created by default since v0.3.1)
 ├── start.py                 # Unified launcher (always uses bin/gh.exe)
 ├── start.bat                # One-click start script (prefers gh_upx.exe)
 ├── restart.bat              # One-click restart script (prefers gh_upx.exe)
@@ -765,7 +772,7 @@ The engine source has zero third-party dependencies (pure standard library): a h
 ## Running Tests
 
 ```bash
-# Go engine tests (unit + HTTP integration, 71 test functions)
+# Go engine tests (unit + HTTP integration, 79 test functions)
 cd engine && go test ./... -count=1
 
 # Python component tests (GUI proxy, frontend page, launcher logic)
@@ -784,11 +791,65 @@ What is actually covered: YAML parsing, GGUF parsing (including invalid magic), 
 
 | Build | Size (measured) |
 | --- | --- |
-| Engine stripped (`-s -w -buildid=` + trimpath) — `bin/gh.exe` | 6,394,368 bytes (≈ 6.10 MB) |
-| Engine UPX-compressed (`--lzma -9`) — `bin/gh_upx.exe` | 2,043,904 bytes (≈ 1.95 MB) |
+| Engine stripped (`-s -w -buildid=` + trimpath) — `bin/gh.exe` | 6,433,280 bytes (≈ 6.10 MB) |
+| Engine UPX-compressed (`--lzma -9`) — `bin/gh_upx.exe` | 2,056,704 bytes (≈ 1.95 MB) |
 | GUI frontend | Single embedded file, no external assets (`INDEX_HTML`, 14,324 characters / 15,317 bytes) |
 
 Design approach: hand-written HTTP layer using only the `net` package (avoiding the ~4 MB `net/http` standard library) + zero third-party dependencies + UPX compression. On Windows, the physical floor for a network-capable Go binary is about 0.72 MB (pure `net` package + UPX extreme); the UPX build here is about 1.95 MB, which remains comfortably lightweight. The engine is a single file with zero runtime dependencies — extract and run.
+
+---
+
+## API Keys & Credentials
+
+Before v0.3.1 the only ways to configure a provider key were editing `plugins/<provider>/config.yaml` or setting
+an environment variable (`key: ${DEEPSEEK_API_KEY}`), followed by an engine restart. There are now three
+equivalent channels - **all of them write `keys.yaml` and take effect immediately (hot reload, no restart)**.
+
+### 1. GUI: the 🔑 Keys panel
+
+Click **🔑 密钥 / Keys** in the toolbar. The panel lists every loaded provider and its state:
+
+| State | Meaning |
+| --- | --- |
+| Not configured | Neither `plugins/<provider>/config.yaml` nor the environment provides a usable key; calls return 401 |
+| Configured `sk-a****1234` | A usable key exists; only the first and last 4 characters are echoed |
+| Placeholder (requests will fail) | The plugin still holds a sample placeholder such as `sk-xxxxxx` / `sk-yyyyyy` - non-empty, so it counts as "configured", but any real request will 401. Replace it with a real key |
+
+Paste the key into the row and press Save; the state refreshes immediately and the next chat request uses it.
+
+### 2. CLI: the `/key` command
+
+```text
+/key list                         # list providers and their state
+/key set deepseek sk-xxxxxxxx     # write (effective immediately)
+/key help
+```
+
+### 3. HTTP: `GET/POST /v1/keys`
+
+```bash
+# read state (never returns the full key, only a mask)
+curl http://127.0.0.1:8000/v1/keys
+
+# write a provider key
+curl -X POST http://127.0.0.1:8000/v1/keys \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"deepseek","key":"sk-xxxxxxxx"}'
+```
+
+Response: `{"ok":true,"provider":"deepseek","masked":"sk-x****xxxx","applied":true}`.
+An unknown `provider` returns 404; empty `provider`/`key` returns 400.
+
+### File and precedence
+
+- Location: `keys.yaml` in the engine working directory (next to `config.yaml` and `gateway.pid`).
+- Precedence: `keys.yaml` > `key`/`api_keys` in `plugins/<provider>/config.yaml` > expanded `${ENV_VAR}`.
+- Hot reload: before every `/v1/keys`, chat and model-list request the engine compares `keys.yaml` mtime+size and reloads when it changed.
+- Revert: **deleting `keys.yaml` restores the plugin/environment configuration** without touching any config file.
+- Permissions: written with `0600` (current user only) and listed in `.gitignore`, so it is never committed by accident.
+- Security: `/v1/keys` only accepts **loopback** callers (403 otherwise) and is exempt from `gateway_api_key` - it is the credential bootstrap endpoint. Never expose the engine to the public internet.
+
+> `keys.yaml` stores keys in **plaintext** (same as `plugins/*/config.yaml`). It is more convenient than environment variables but should not be shared; use `${ENV_VAR}` when you need stronger separation.
 
 ---
 
@@ -804,9 +865,13 @@ Design approach: hand-written HTTP layer using only the `net` package (avoiding 
 | Python present but pywebview missing (blocked pip / no permission): `python gui\gui.py` raises ImportError and the window flashes away | `start.bat` additionally probes `python -c "import webview"` and falls back to `/ui` on failure |
 | The root endpoint returned only the version, leaving Python-less users nowhere to go | `GET /` now includes a `"ui":"/ui"` field |
 | `/ui` is a static page, so repeated refreshes consumed the rate-limit budget | `/ui` is exempt from rate limiting, like `/health` and `/` |
+| Users could not find how to start the app after installing (desktop shortcut task was unchecked) | The `desktopicon` task in `installer.iss` no longer carries `Flags: unchecked`, so a desktop shortcut is created by default |
+| Configuring an API key meant editing YAML, setting environment variables and restarting the engine | Added a GUI 🔑 key panel, a CLI `/key` command and `GET/POST /v1/keys`; writes go to `keys.yaml` and are hot-reloaded, no restart needed |
+| On Chinese Windows the installer wizard body rendered as tofu boxes while the title bar was fine | `installer.iss` now sets `DefaultDialogFontName=Microsoft YaHei UI`: Inno's default dialog font (Segoe UI) has no CJK glyphs and slim images without FontLink do not fall back |
+| The setup program, shortcuts and uninstall entry all used the generic blank system icon | Added `assets/general-harness.ico` (9 sizes, 16–256); `installer.iss` sets `SetupIconFile`, every `[Icons]` entry and `UninstallDisplayIcon` point at it, and the ico ships to `{app}\general-harness.ico` |
 
 The built-in page matches the desktop GUI feature-for-feature (model picker, streaming, thinking fold,
-web-search toggle with source cards, usage panel); it only omits the time-series chart that `gui.py`
+web-search toggle with source cards, key panel, usage panel); it only omits the time-series chart that `gui.py`
 renders as SVG in Python.
 ## Fixed in v0.3.0
 
@@ -897,8 +962,8 @@ Yes. `config.yaml`, `plugins/*/config.yaml`, and `models/*.gguf` are loaded or s
 <details>
 <summary><b>Why are there two gh.exe files?</b></summary>
 
-- `gh_upx.exe`: UPX-compressed (2,043,904 bytes ≈ 1.95 MB), smaller, decompresses to memory at runtime;
-- `gh.exe`: regular stripped build (6,394,368 bytes ≈ 6.10 MB), slightly faster startup.
+- `gh_upx.exe`: UPX-compressed (2,056,704 bytes ≈ 1.95 MB), smaller, decompresses to memory at runtime;
+- `gh.exe`: regular stripped build (6,433,280 bytes ≈ 6.10 MB), slightly faster startup.
 
 They are functionally identical; use `gh_upx.exe` day-to-day. `start.bat`/`restart.bat` prefer it and fall back to `gh.exe`; `start.py` always uses `bin\gh.exe` and has no fallback.
 </details>
@@ -998,7 +1063,7 @@ Usually a port conflict or a config error:
 - **The CLI does not display `reasoning_content`**: it prints a "…" indicator and then the answer text. The colored/collapsible thinking output is GUI-only.
 - **Launcher port handling is inconsistent**: `start.py` reads `server.port` (via PyYAML, silently falling back to 8000 when PyYAML is missing), while `start.bat` / `restart.bat` / `stop.bat` hard-code port 8000 and ignore `server.port`. `start.py` always uses `bin\gh.exe` (no `gh_upx.exe` preference and no fallback); `start.bat` never calls `start.py`.
 - **Usage records are bounded and batched**: at most 10000 records are kept in memory (oldest silently dropped) and flushed every 50 entries, so a hard kill can lose up to 49 recent records.
-- **No portable packaging**: `installer.iss` (Inno Setup) is the only packaging script; the desktop-icon task is unchecked by default and `PrivilegesRequired=lowest` means the default install goes to the current user's program directory.
+- **No portable packaging**: `installer.iss` (Inno Setup) is the only packaging script; the desktop shortcut is created by default since v0.3.1 (previously unchecked by default and `PrivilegesRequired=lowest` means the default install goes to the current user's program directory.
 
 ---
 

@@ -77,6 +77,14 @@ a.src:hover { border-color:var(--accent); }
 a.src .idx { color:var(--accent); }
 a.src .title { flex:1; word-break:break-word; }
 a.src .host { color:var(--muted); font-size:12px; white-space:nowrap; }
+#keysPanel { margin:0 16px 12px; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 14px; max-height:45vh; overflow-y:auto; }
+#keysPanel .usage-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-weight:bold; }
+.keys-row { display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:13px; }
+.keys-row .pname { width:96px; color:var(--accent); }
+.keys-row .pstate { width:170px; color:var(--muted); font-size:12px; }
+.keys-row input { flex:1; min-width:120px; }
+.keys-row button { white-space:nowrap; }
+#keysTip { margin-top:8px; color:var(--muted); font-size:12px; line-height:1.5; }
 </style>
 </head>
 <body>
@@ -87,6 +95,7 @@ a.src .host { color:var(--muted); font-size:12px; white-space:nowrap; }
   <input id="gwkey" type="password" placeholder="网关 Key（可选）" title="设置 gateway_api_key 后需填写，保存在本机 localStorage">
   <button id="deep">🧠 深度思考</button>
   <button id="web" title="开启后由引擎先做一次联网检索，再把带来源的资料交给模型">🌐 联网</button>
+  <button id="keys" title="填写各厂商的 API Key，保存后立即生效，无需重启引擎">🔑 密钥</button>
   <button id="usage">📊 用量</button>
   <button id="refresh">刷新</button>
   <button id="clear">清空</button>
@@ -107,6 +116,11 @@ a.src .host { color:var(--muted); font-size:12px; white-space:nowrap; }
   <div class="usage-subhead">历史对话</div>
   <div id="usageBody"></div>
 </div>
+<div id="keysPanel" hidden>
+  <div class="usage-head"><span>🔑 厂商 API Key</span><button id="keysClose">✕</button></div>
+  <div id="keysList"><div class="hint">加载中…</div></div>
+  <div id="keysTip">保存后立即生效（写入本机 keys.yaml，优先级高于 plugins 里的配置）。Key 以明文保存在本机，删除 keys.yaml 即回到插件配置。</div>
+</div>
 <div id="chat"></div>
 <div id="status">就绪</div>
 <div id="inputbar">
@@ -119,6 +133,7 @@ const chat = $('#chat'), modelSel = $('#model'), input = $('#input');
 const statusEl = $('#status'), sendBtn = $('#send');
 const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody'), usageRange = $('#usageRange'), usageChart = $('#usageChart'), gwkeyInput = $('#gwkey');
 const webBtn = $('#web');
+const keysBtn = $('#keys'), keysPanel = $('#keysPanel'), keysList = $('#keysList');
 let history = [];
 let deepThinking = false;
 let webSearch = localStorage.getItem('websearch') === '1';
@@ -147,6 +162,48 @@ async function loadModels() {
     modelSel.innerHTML = d.data.map(m => '<option>'+esc(m.id)+'</option>').join('');
     statusEl.textContent = '已加载 ' + d.data.length + ' 个模型';
   } catch(e) { statusEl.textContent = '模型加载失败: '+e.message; }
+}
+async function loadKeys() {
+  try {
+    const r = await fetch('/v1/keys', {headers: authHeaders()});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error?.message || '加载失败');
+    if (!d.providers || !d.providers.length) { keysList.innerHTML = '<div class="hint">没有可用厂商</div>'; return; }
+    keysList.innerHTML = d.providers.map(p => {
+      const state = p.placeholder ? '占位符（请求会失败）' : (p.configured ? '已配置 ' + p.masked : '未配置');
+      return '<div class="keys-row" data-p="' + escAttr(p.name) + '">' +
+        '<span class="pname">' + esc(p.name) + '</span>' +
+        '<span class="pstate">' + esc(state) + '</span>' +
+        '<input type="password" placeholder="粘贴 ' + esc(p.name) + ' 的 API Key" autocomplete="off">' +
+        '<button class="save">保存</button></div>';
+    }).join('');
+    keysList.querySelectorAll('.keys-row').forEach(row => {
+      const btn = row.querySelector('.save'), inp = row.querySelector('input');
+      btn.onclick = async () => {
+        const key = inp.value.trim();
+        if (!key) { statusEl.textContent = '请先粘贴 Key'; return; }
+        btn.disabled = true;
+        try {
+          const r2 = await fetch('/v1/keys', {method:'POST', headers: authHeaders(),
+            body: JSON.stringify({provider: row.dataset.p, key})});
+          const d2 = await r2.json();
+          if (!r2.ok) throw new Error(d2.error?.message || '保存失败');
+          statusEl.textContent = row.dataset.p + ' 的 Key 已保存（' + d2.masked + '），立即生效';
+          inp.value = '';
+          await loadKeys();
+        } catch(e) { statusEl.textContent = '保存失败: ' + e.message; }
+        finally { btn.disabled = false; }
+      };
+    });
+  } catch(e) {
+    keysList.innerHTML = '<div class="hint">加载失败: ' + esc(e.message) + '</div>';
+  }
+}
+function toggleKeys() {
+  const open = keysPanel.hidden;
+  keysPanel.hidden = !open;
+  keysBtn.classList.toggle('active', open);
+  if (open) loadKeys();
 }
 function toggleDeep() {
   deepThinking = !deepThinking;
@@ -315,6 +372,8 @@ $('#refresh').onclick = loadModels;
 $('#deep').onclick = toggleDeep;
 $('#web').onclick = toggleWeb;
 $('#usage').onclick = loadUsage;
+$('#keys').onclick = toggleKeys;
+$('#keysClose').onclick = () => { keysPanel.hidden = true; keysBtn.classList.remove('active'); };
 $('#usageClose').onclick = () => { usagePanel.hidden = true; };
 $('#usageRange').onchange = loadChart;
 gwkeyInput.value = localStorage.getItem('gwkey') || '';

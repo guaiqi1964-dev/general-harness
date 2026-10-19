@@ -16,7 +16,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\General Harness
 DefaultGroupName=General Harness
 DisableProgramGroupPage=no
-UninstallDisplayIcon={app}\bin\gh_upx.exe
+UninstallDisplayIcon={app}\general-harness.ico
 Compression=lzma2/max
 SolidCompression=yes
 OutputDir=release_assets
@@ -26,8 +26,13 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 WizardStyle=modern
+; 显式指定含中文字形的对话框字体。默认 Segoe UI 在精简系统/英文系统上可能
+; 没有配置 GDI FontLink，导致中文向导文字全部渲染成方块（tofu）。
+DefaultDialogFontName=Microsoft YaHei UI
 VersionInfoVersion={#MyAppFileVersion}
 VersionInfoProductName={#MyAppName}
+; 安装程序自身的 exe 图标（用户双击安装包时看到的第一印象）
+SetupIconFile=assets\general-harness.ico
 SetupLogging=yes
 
 [Languages]
@@ -35,7 +40,7 @@ Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.i
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "Create desktop shortcut"; GroupDescription: "Additional tasks:"; Flags: unchecked
+Name: "desktopicon"; Description: "Create desktop shortcut"; GroupDescription: "Additional tasks:"
 
 [Files]
 Source: "bin\gh_upx.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
@@ -51,6 +56,7 @@ Source: "cli\README.md"; DestDir: "{app}\cli"; Flags: ignoreversion
 Source: "gui\gui.py"; DestDir: "{app}\gui"; Flags: ignoreversion
 Source: "gui\requirements.txt"; DestDir: "{app}\gui"; Flags: ignoreversion
 Source: "models\*.gguf"; DestDir: "{app}\models"; Flags: ignoreversion
+Source: "assets\general-harness.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "plugins\deepseek\config.yaml"; DestDir: "{app}\plugins\deepseek"; Flags: ignoreversion
 Source: "plugins\kimi\config.yaml"; DestDir: "{app}\plugins\kimi"; Flags: ignoreversion
 Source: "plugins\openai\config.yaml"; DestDir: "{app}\plugins\openai"; Flags: ignoreversion
@@ -58,12 +64,12 @@ Source: "plugins\qwen\config.yaml"; DestDir: "{app}\plugins\qwen"; Flags: ignore
 
 
 [Icons]
-Name: "{group}\General Harness (GUI)"; Filename: "{app}\start.bat"; WorkingDir: "{app}"
-Name: "{group}\General Harness (CLI)"; Filename: "{app}\start.bat"; Parameters: "cli"; WorkingDir: "{app}"
-Name: "{group}\Restart Engine"; Filename: "{app}\restart.bat"; WorkingDir: "{app}"
-Name: "{group}\Stop Engine"; Filename: "{app}\stop.bat"; WorkingDir: "{app}"
-Name: "{group}\Uninstall General Harness"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\General Harness"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\General Harness (GUI)"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"
+Name: "{group}\General Harness (CLI)"; Filename: "{app}\start.bat"; Parameters: "cli"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"
+Name: "{group}\Restart Engine"; Filename: "{app}\restart.bat"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"
+Name: "{group}\Stop Engine"; Filename: "{app}\stop.bat"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"
+Name: "{group}\Uninstall General Harness"; Filename: "{uninstallexe}"; IconFilename: "{app}\general-harness.ico"
+Name: "{autodesktop}\General Harness"; Filename: "{app}\start.bat"; WorkingDir: "{app}"; IconFilename: "{app}\general-harness.ico"; Tasks: desktopicon
 
 [Run]
 ; Auto-detect Python and install GUI deps (optional; silent failure does not block install)
@@ -73,3 +79,4 @@ Filename: "{app}\start.bat"; Description: "Launch General Harness now"; Flags: n
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\gateway.pid"
 Type: filesandordirs; Name: "{app}\usage_stats.json"
+Type: files; Name: "{app}\keys.yaml"

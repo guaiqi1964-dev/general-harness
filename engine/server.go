@@ -8,8 +8,10 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Engine 聚合所有能力。
@@ -22,21 +24,35 @@ type Engine struct {
 	Rate   *RateLimiter
 	Agent  *AgentExecutor
 	Search *searchService
+
+	// keys.yaml 覆盖层（GUI / CLI 写入的 Key），变更后热加载，不必重启引擎。
+	KeysPath string
+	keysMod  time.Time
+	keysSize int64
+	baseKeys map[string]APIKey
 }
 
 func newEngine(cfg *GlobalConfig, root string) *Engine {
-	cloud := newCloudRegistry(root + "/plugins")
-	gguf := newGGUFRegistry(root + "/models")
+	cloud := newCloudRegistry(filepath.Join(root, "plugins"))
+	gguf := newGGUFRegistry(filepath.Join(root, "models"))
 	gguf.scan()
-	usage := newUsageStore(root + "/usage_stats.json")
+	usage := newUsageStore(filepath.Join(root, "usage_stats.json"))
+	keysPath := keysFilePath(root)
 	engine := &Engine{
-		Config: cfg,
-		Cloud:  cloud,
-		GGUF:   gguf,
-		Usage:  usage,
-		Rate:   newRateLimiter(),
-		Agent:  newAgentExecutor(cfg.Agent),
-		Search: newSearchService(cfg.Search),
+		Config:   cfg,
+		Cloud:    cloud,
+		GGUF:     gguf,
+		Usage:    usage,
+		Rate:     newRateLimiter(),
+		Agent:    newAgentExecutor(cfg.Agent),
+		Search:   newSearchService(cfg.Search),
+		KeysPath: keysPath,
+		baseKeys: baseKeys(cloud),
+	}
+	applyKeyOverrides(cloud, engine.baseKeys, loadKeyOverrides(root))
+	if st, err := os.Stat(keysPath); err == nil {
+		engine.keysMod = st.ModTime()
+		engine.keysSize = st.Size()
 	}
 	engine.Ollama = newOllamaAdapter(cloud, gguf, cfg.Aliases)
 	return engine
@@ -131,6 +147,9 @@ func (e *Engine) dispatch(req *httpRequest, w *responseWriter) {
 		}
 	case path == "/v1/models":
 		e.handleModels(req, w)
+	case path == "/v1/keys":
+		// 本机 Key 管理：给 GUI / CLI 提供“填 Key 就能用”的入口。
+		e.handleKeys(req, w)
 	case path == "/v1/chat/completions":
 		e.handleChatCompletions(req, w)
 	case path == "/v1/usage/stats":
@@ -230,6 +249,8 @@ func clientIP(req *httpRequest) string {
 // ---- 模型列表 ----
 
 func (e *Engine) handleModels(req *httpRequest, w *responseWriter) {
+	// 模型列表会回显每个 Key 是否已配置，取最新状态。
+	e.refreshKeysIfChanged()
 	if req.Method != "GET" {
 		w.JSON(405, map[string]any{"error": map[string]any{"message": "Method Not Allowed", "type": "method_not_allowed", "code": 405}})
 		return
@@ -280,6 +301,8 @@ type chatRequestBody struct {
 }
 
 func (e *Engine) handleChatCompletions(req *httpRequest, w *responseWriter) {
+	// 每次对话前检查 keys.yaml 是否被 GUI / CLI 改过：改完即生效，无需重启。
+	e.refreshKeysIfChanged()
 	if req.Method != "POST" {
 		w.JSON(405, map[string]any{"error": map[string]any{"message": "Method Not Allowed", "type": "method_not_allowed", "code": 405}})
 		return

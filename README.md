@@ -9,7 +9,7 @@
 > CLI，前后端一起运行时使用 GUI。
 
 - **版本**：v0.3.1（相对 v0.3.0 新增内置浏览器界面 `GET /ui` 并让 `start.bat` 在无 Python 时自动回落到它，见 [v0.3.1 修复](#v031-修复)；联网检索见 [联网搜索](#联网搜索)）
-- **引擎**：`bin/gh_upx.exe`（实测 2,043,904 字节 ≈ 2.0 MB）/ `bin/gh.exe`（实测 6,394,368 字节 ≈ 6.4 MB）——单文件、零第三方依赖、解压即用
+- **引擎**：`bin/gh_upx.exe`（实测 2,056,704 字节 ≈ 2.0 MB）/ `bin/gh.exe`（实测 6,433,280 字节 ≈ 6.4 MB）——单文件、零第三方依赖、解压即用
 - **引擎源码**：`engine/`——纯 Go 标准库实现（含手写 HTTP 层），无任何外部模块
 - **GUI**：`gui/gui.py`——基于 pywebview 调用系统原生 Edge WebView2，不可用时自动回退系统浏览器
 
@@ -42,6 +42,8 @@
   - [安全与隐私防护](#安全与隐私防护)
   - [前端用法](#前端用法)
   - [缓存与并发](#缓存与并发)
+- [密钥与凭据管理](#密钥与凭据管理)
+- [v0.3.1 修复](#v031-修复)
 - [v0.3.0 修复](#v030-修复)
 - [配置说明](#配置说明)
   - [全局配置 config.yaml](#全局配置-configyaml)
@@ -70,7 +72,8 @@
 | 📊 **用量统计** | 时间维度（10 分钟至半年或自定义区间）与对话维度（最近 N 次）双聚合，JSON 原子持久化，内存最多保留 10000 条 |
 | 🔄 **自动重试** | 对 429、5xx 及网络错误进行指数退避重试（最多 3 次），上游错误统一映射 |
 | 🔒 **安全机制** | 可选网关鉴权（Bearer Token）、单 IP 滑动窗口限流、CORS 放行、Key 支持环境变量注入、正文抓取 SSRF 防护 |
-| ⚡ **极致轻量** | 引擎单二进制约 2.0 MB（UPX 压缩版实测 2,043,904 字节），零运行时依赖；手写 HTTP 层与 YAML 子集解析器 |
+| ⚡ **极致轻量** | 引擎单二进制约 2.0 MB（UPX 压缩版实测 2,056,704 字节），零运行时依赖；手写 HTTP 层与 YAML 子集解析器 |
+| 🔑 **密钥管理**（v0.3.1 新增） | GUI 的 🔑 面板、CLI `/key`、`GET/POST /v1/keys` 三条通道都能填 Key，写入 `keys.yaml` 后热加载生效；删除该文件即回退 |
 
 ---
 
@@ -84,7 +87,8 @@
 - 安装包内置引擎二进制、`config.yaml`、启动脚本、GUI、示例 GGUF 与四个厂商插件配置；
 - 安装时自动检测 Python 并静默安装 GUI 依赖（pywebview），失败不阻断安装；
 - 开始菜单默认创建 5 个快捷方式（GUI / CLI / 重启 / 停止 / 卸载）；
-- **桌面图标任务默认不勾选**（`[Tasks] desktopicon` 带 `Flags: unchecked`），需要在向导的“附加任务”页手动勾选。
+- **桌面快捷方式默认创建**（v0.3.1 起 `[Tasks] desktopicon` 不再带 `Flags: unchecked`）；开始菜单快捷方式始终创建。
+- **品牌图标**：安装程序自身、桌面与开始菜单全部快捷方式、控制面板卸载项统一使用 `assets/general-harness.ico`（多尺寸 16/20/24/32/40/48/64/128/256，32bpp），安装后该图标随包落到 `{app}\general-harness.ico`。
 
 > `installer.iss` 是当前唯一的打包脚本（输出到 `release_assets/`，文件名取自 `#define MyAppVersion`）；该文件的 `MyAppVersion` 当前已是 `0.3.1`，与本文档一致。
 
@@ -650,6 +654,59 @@ search:
 
 ---
 
+## 密钥与凭据管理
+
+v0.3.1 之前，配置厂商 Key 只能改 `plugins/<厂商>/config.yaml` 或设环境变量（`key: ${DEEPSEEK_API_KEY}`），改完还得重启引擎。
+现在有三条等效通道，**都写入 `keys.yaml`，保存即生效（热加载，无需重启）**。
+
+### 1. GUI：🔑 密钥 面板
+
+点顶部工具栏的 **🔑 密钥**，面板列出全部已加载厂商及其状态：
+
+| 状态 | 含义 |
+| --- | --- |
+| 未配置 | `plugins/<厂商>/config.yaml` 与环境变量里都没有可用 Key，调用会 401 |
+| 已配置 `sk-a****1234` | 有可用 Key，只回显首尾 4 字符 |
+| 占位符（请求会失败） | 插件配置里还是 `sk-xxxxxx`/`sk-yyyyyy` 这类示例占位符——非空所以被当作「已配置」，但真请求上游一定 401，请换成真 Key |
+
+在对应行粘贴 Key 点「保存」，状态立即刷新，下一次对话就用新 Key。
+
+### 2. CLI：`/key` 命令
+
+```text
+/key list                         # 列出厂商与配置状态
+/key set deepseek sk-xxxxxxxx     # 写入（立即生效）
+/key help
+```
+
+### 3. HTTP：`GET/POST /v1/keys`
+
+```bash
+# 查看状态（不含完整 Key，只回显掩码）
+curl http://127.0.0.1:8000/v1/keys
+
+# 写入某厂商的 Key
+curl -X POST http://127.0.0.1:8000/v1/keys \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"deepseek","key":"sk-xxxxxxxx"}'
+```
+
+响应示例：`{"ok":true,"provider":"deepseek","masked":"sk-x****xxxx","applied":true}`。
+`provider` 未知返回 404，`provider`/`key` 为空返回 400。
+
+### 文件与优先级
+
+- 位置：引擎工作目录下的 `keys.yaml`（与 `config.yaml`、`gateway.pid` 同级）。
+- 优先级：`keys.yaml` > `plugins/<厂商>/config.yaml` 的 `key`/`api_keys` > `${环境变量}` 展开结果。
+- 热加载：引擎在每次 `/v1/keys`、对话与模型列表请求前比对 `keys.yaml` 的 mtime+size，变了就重载。
+- 回退：**删除 `keys.yaml` 即回到插件/环境变量配置**，无需改任何配置文件。
+- 权限：以 `0600` 写入（仅当前用户可读写），已加入 `.gitignore`，不会被误提交。
+- 安全：`/v1/keys` 只允许**回环地址**调用（非本机返回 403），且不受 `gateway_api_key` 限制——它本身就是配置凭据的入口，请勿把引擎暴露到公网。
+
+> `keys.yaml` 存的是**明文** Key（与 `plugins/*/config.yaml` 一致）。它比环境变量方便，但同样不要分享该文件；需要更强隔离时仍建议用 `${ENV_VAR}` 形式。
+
+---
+
 ## v0.3.1 修复
 
 > 起因：在「零 Python」的干净 Windows 上实测安装包——装得上，但双击后只看到一行英文错误与 `pause`，
@@ -661,8 +718,12 @@ search:
 | 有 Python 但缺 pywebview（pip 被墙/权限不足）时 `python gui\gui.py` 抛 ImportError，窗口一闪而过 | `start.bat` 追加 `python -c "import webview"` 探测，失败同样回落到 `/ui` |
 | 根路径只返回版本号，无 Python 用户无处可去 | `GET /` 增加 `"ui":"/ui"` 字段 |
 | `/ui` 是静态页面，快速刷新会吃掉限流配额 | `/ui` 与 `/health`、`/` 一并豁免限流 |
+| 装完找不到入口（桌面图标任务默认不勾选，开始菜单里也只有一项） | `installer.iss` 的 `desktopicon` 任务去掉 `Flags: unchecked`，默认创建桌面快捷方式 |
+| 配 Key 要手改 YAML / 设环境变量 / 重启引擎，对普通用户门槛过高 | 新增 GUI 🔑 密钥面板、CLI `/key` 命令、`GET/POST /v1/keys`；写入 `keys.yaml` 后热加载，无需重启 |
+| 中文系统上安装向导正文显示为方块（豆腐块），标题栏却正常 | `installer.iss` 增加 `DefaultDialogFontName=Microsoft YaHei UI`：Inno 默认对话框字体 Segoe UI 缺中文字形，精简镜像又没配 FontLink 时不回退 |
+| 安装包、快捷方式、卸载项全是系统默认的空白图标，认不出是什么软件 | 项目新增 `assets/general-harness.ico`（9 档尺寸 16~256）；`installer.iss` 用 `SetupIconFile` 给安装程序设图标，`[Icons]` 全部快捷方式与 `UninstallDisplayIcon` 指向该 ico，随包安装到 `{app}\general-harness.ico` |
 
-内置页面与桌面 GUI 功能等价：模型选择、流式输出、思考折叠、🌐 联网开关与来源卡片、📊 用量查询；
+内置页面与桌面 GUI 功能等价：模型选择、流式输出、思考折叠、🌐 联网开关与来源卡片、🔑 密钥面板、📊 用量查询；
 只是不含 `gui.py` 用 Python 生成的分时图表（那是本地 SVG 渲染，引擎侧不重复实现）。
 ## v0.3.0 修复
 
@@ -834,8 +895,8 @@ models:
 ```
 General_Harness_Release/
 ├── bin/
-│   ├── gh_upx.exe           # 引擎（UPX 压缩版，实测 2,043,904 字节 ≈ 2.0 MB，推荐）
-│   └── gh.exe               # 引擎（strip 版，实测 6,394,368 字节 ≈ 6.4 MB）
+│   ├── gh_upx.exe           # 引擎（UPX 压缩版，实测 2,056,704 字节 ≈ 2.0 MB，推荐）
+│   └── gh.exe               # 引擎（strip 版，实测 6,433,280 字节 ≈ 6.4 MB）
 ├── engine/                  # Go 引擎源码（零第三方依赖）
 │   ├── main.go              # 入口与子命令分发
 │   ├── server.go            # HTTP 路由与全部处理器
@@ -854,6 +915,7 @@ General_Harness_Release/
 │   ├── search_chat.go       # 对话侧 web_search 集成（检索词构造与上下文注入）
 │   ├── htmltext.go          # SSRF 防护 + 手写 HTML 正文抽取
 │   ├── ui.go                # 内置浏览器界面 handler（/ui）
+│   ├── keys.go              # 密钥管理（/v1/keys、keys.yaml 覆盖层与热加载）
 │   ├── ui.html              # 内置界面源码（go:embed 编进二进制）
 │   ├── engine_test.go       # 单元测试
 │   ├── integration_test.go  # HTTP 集成测试
@@ -866,6 +928,7 @@ General_Harness_Release/
 │   ├── search_chat_test.go  # 对话集成与降级测试
 │   ├── htmltext_test.go     # HTML 抽取 / SSRF / 正文抓取测试
 │   ├── ui_test.go           # 内置界面端点测试
+│   ├── keys_test.go         # 密钥覆盖层 / 掩码 / 热加载 / 回环限制测试
 │   └── go.mod               # 模块定义（无外部依赖）
 ├── gui/
 │   ├── gui.py               # Webview GUI（pywebview / 浏览器回退，内置代理与单文件前端）
@@ -877,6 +940,8 @@ General_Harness_Release/
 │   ├── kimi/config.yaml
 │   ├── openai/config.yaml
 │   └── qwen/config.yaml
+├── assets/
+│   └── general-harness.ico  # 品牌图标（16~256 共 9 档）：安装包、桌面/开始菜单快捷方式、卸载项统一使用
 ├── cli/README.md            # CLI 模式说明
 ├── tests/test_gui.py        # GUI / 代理 / 启动器测试
 ├── config.yaml              # 全局配置
@@ -889,7 +954,7 @@ General_Harness_Release/
 ├── PLAN-v0.3.0.md           # v0.3.0（联网搜索）设计文档
 ├── README.md                # 本文档（中文）
 ├── README.en.md             # 英文版文档
-└── .gitignore               # 忽略构建产物、缓存与本机数据
+└── .gitignore               # 忽略构建产物、缓存与本机数据（含 keys.yaml）
 ```
 
 ---
@@ -913,7 +978,7 @@ upx --lzma -9 -o ../bin/gh_upx.exe ../bin/gh.exe
 ## 运行测试
 
 ```bash
-# Go 引擎测试：69 个测试函数（单元 + HTTP 集成），实测全绿
+# Go 引擎测试：79 个测试函数（单元 + HTTP 集成），实测全绿
 cd engine && go test ./... -count=1
 
 # Python 组件测试：7 个测试（GUI 代理、前端页面、启动器逻辑），实测全绿
@@ -933,8 +998,8 @@ python -m unittest discover -s tests
 
 | 构建 | 体积（实测字节数） |
 | --- | --- |
-| 引擎 strip（`-s -w -buildid=` + trimpath） | `bin/gh.exe` = 6,394,368 字节 ≈ **6.4 MB** |
-| 引擎 UPX 压缩（`--lzma -9`） | `bin/gh_upx.exe` = 2,043,904 字节 ≈ **2.0 MB** |
+| 引擎 strip（`-s -w -buildid=` + trimpath） | `bin/gh.exe` = 6,433,280 字节 ≈ **6.4 MB** |
+| 引擎 UPX 压缩（`--lzma -9`） | `bin/gh_upx.exe` = 2,056,704 字节 ≈ **2.0 MB** |
 | GUI 前端单文件 HTML（`gui/gui.py` 的 `INDEX_HTML` 常量） | 14,324 字符 / **15,317 字节**（UTF-8，含中文文案） |
 
 设计思路：仅使用 `net` 包手写 HTTP 层（避开体积较大的 `net/http` 标准库）+ 零第三方依赖 + UPX 压缩。引擎单文件、零运行时依赖，解压即可运行。
@@ -968,7 +1033,7 @@ Python 仅在两处使用：`start.py` 启动器和 Webview GUI 模式。
 | 安装包（.exe，由 `installer.iss` 产出） | 绿色压缩包（.zip，自行压缩发行目录） |
 | --- | --- |
 | 向导式安装，可自选安装目录 | 解压即用，无需安装 |
-| 开始菜单创建 5 个快捷方式；**桌面图标任务默认不勾选**（`Flags: unchecked`） | 不写注册表、不留系统目录，快捷方式需自建 |
+| 开始菜单创建 5 个快捷方式；**桌面快捷方式默认创建**（v0.3.1 起不再带 `Flags: unchecked`） | 不写注册表、不留系统目录；卸载时会清理 `keys.yaml` |
 | 安装时自动检测 Python 并尝试安装 GUI 依赖（失败不阻断） | 需自行 `pip install -r gui/requirements.txt` |
 
 > `DefaultDirName={autopf}\General Harness` 配合 `PrivilegesRequired=lowest`：**安装不需要管理员权限，实际装到当前用户目录**（约 `%LocalAppData%\Programs\General Harness`），而非全局 `%ProgramFiles%`。
@@ -1019,8 +1084,8 @@ python gui/gui.py --url http://127.0.0.1:9000   # GUI 连接新端口
 <details>
 <summary><b>为什么有两个 gh.exe？</b></summary>
 
-- `gh_upx.exe`：UPX 压缩版（实测 2,043,904 字节 ≈ 2.0 MB），体积更小，运行时自动解压到内存；
-- `gh.exe`：常规 strip 版（实测 6,394,368 字节 ≈ 6.4 MB），启动略快。
+- `gh_upx.exe`：UPX 压缩版（实测 2,056,704 字节 ≈ 2.0 MB），体积更小，运行时自动解压到内存；
+- `gh.exe`：常规 strip 版（实测 6,433,280 字节 ≈ 6.4 MB），启动略快。
 
 两者功能完全一致，日常推荐使用 `gh_upx.exe`。
 

@@ -9,7 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -105,6 +108,10 @@ func runCLI() {
 		if strings.HasPrefix(text, "/web ") {
 			query := strings.TrimSpace(strings.TrimPrefix(text, "/web "))
 			runCLISearch(engine, query)
+			continue
+		}
+		if text == "/key" || strings.HasPrefix(text, "/key ") {
+			runCLIKeyCommand(engine, strings.TrimSpace(strings.TrimPrefix(text, "/key")))
 			continue
 		}
 
@@ -266,10 +273,55 @@ func listCLIModels(engine *Engine) {
 func printCLIHelp() {
 	fmt.Println(ansiDim + "/model <name>  切换模型" + ansiReset)
 	fmt.Println(ansiDim + "/models        列出模型" + ansiReset)
+	fmt.Println(ansiDim + "/key           查看各厂商 Key 状态（/key <厂商> <密钥> 设置）" + ansiReset)
 	fmt.Println(ansiDim + "/search on|off 联网检索开关（status 查看当前状态）" + ansiReset)
 	fmt.Println(ansiDim + "/web <检索词>  单次联网检索并打印编号来源" + ansiReset)
 	fmt.Println(ansiDim + "/clear         清空历史" + ansiReset)
 	fmt.Println(ansiDim + "/exit          退出" + ansiReset)
+}
+
+// runCLIKeyCommand 查看或设置云端厂商的 API Key。
+// 写入 keys.yaml 后立即热加载生效，用户不必重启引擎。
+func runCLIKeyCommand(engine *Engine, arg string) {
+	if arg == "" {
+		names := make([]string, 0, len(engine.Cloud.Providers))
+		for name := range engine.Cloud.Providers {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		fmt.Println(ansiBold + "云端厂商 Key:" + ansiReset)
+		for _, name := range names {
+			p := engine.Cloud.Providers[name]
+			k := p.defaultKey()
+			state := ansiRed + "未配置"
+			if k.Key != "" {
+				state = ansiGreen + "已配置 " + maskKey(k.Key)
+			}
+			fmt.Println("  " + ansiCyan + name + ansiReset + "  " + state + ansiReset)
+		}
+		fmt.Println(ansiDim + "设置: /key <厂商> <密钥>（写入 " + engine.KeysPath + "，立即生效）" + ansiReset)
+		return
+	}
+	parts := strings.Fields(arg)
+	if len(parts) != 2 {
+		fmt.Println(ansiRed + "✗ 用法: /key <厂商> <密钥>" + ansiReset)
+		return
+	}
+	provider, key := parts[0], parts[1]
+	if _, ok := engine.Cloud.Providers[provider]; !ok {
+		fmt.Println(ansiRed + "✗ 未知厂商: " + provider + ansiReset)
+		return
+	}
+	root := filepath.Dir(engine.KeysPath)
+	overrides := loadKeyOverrides(root)
+	overrides[provider] = key
+	if err := writeKeyOverrides(root, overrides); err != nil {
+		fmt.Println(ansiRed + "✗ 写入 keys.yaml 失败: " + err.Error() + ansiReset)
+		return
+	}
+	engine.keysMod = time.Time{}
+	engine.refreshKeysIfChanged()
+	fmt.Println(ansiGreen + "✓ " + provider + " 的 Key 已保存（" + maskKey(key) + "），立即生效" + ansiReset)
 }
 
 // runModels 列出模型子命令。
