@@ -8,8 +8,8 @@
 > 界面）两种交互模式。核心引擎与界面完全解耦：只启动后端时使用
 > CLI，前后端一起运行时使用 GUI。
 
-- **版本**：v0.3.2（相对 v0.3.1 把 🔑 密钥面板补进引擎内置页面 `GET /ui`，无 Python 的用户也能在页面里直接填 Key，见 [v0.3.2 修复](#v032-修复)；内置页面本身见 [v0.3.1 修复](#v031-修复)；联网检索见 [联网搜索](#联网搜索)）
-- **引擎**：`bin/gh_upx.exe`（实测 2,058,240 字节 ≈ 2.0 MB）/ `bin/gh.exe`（实测 6,436,864 字节 ≈ 6.4 MB）——单文件、零第三方依赖、解压即用
+- **版本**：v0.3.3（相对 v0.3.2 把 CLI 能力对齐桌面 GUI：思考过程折叠、用量统计、配置查看、密钥清除、后端切换、Ctrl+C 只中断当前生成、管道模式，见 [v0.3.3 修复](#v033-修复)；历次修复见 [v0.3.2](#v032-修复) / [v0.3.1](#v031-修复)；联网检索见 [联网搜索](#联网搜索)）
+- **引擎**：`bin/gh_upx.exe`（实测 2,070,016 字节 ≈ 2.0 MB）/ `bin/gh.exe`（实测 6,478,336 字节 ≈ 6.4 MB）——单文件、零第三方依赖、解压即用
 - **引擎源码**：`engine/`——纯 Go 标准库实现（含手写 HTTP 层），无任何外部模块
 - **GUI**：`gui/gui.py`——基于 pywebview 调用系统原生 Edge WebView2，不可用时自动回退系统浏览器
 
@@ -43,6 +43,7 @@
   - [前端用法](#前端用法)
   - [缓存与并发](#缓存与并发)
 - [密钥与凭据管理](#密钥与凭据管理)
+- [v0.3.3 修复](#v033-修复)
 - [v0.3.2 修复](#v032-修复)
 - [v0.3.1 修复](#v031-修复)
 - [v0.3.0 修复](#v030-修复)
@@ -82,7 +83,7 @@
 
 ### 方式一：Windows 安装包
 
-从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-Setup-0.3.2.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
+从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-Setup-0.3.3.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
 
 - 可自选安装目录：脚本中为 `DefaultDirName={autopf}\General Harness`，同时 `PrivilegesRequired=lowest`，因此**无需管理员权限**，实际安装到当前用户的程序目录（约 `%LocalAppData%\Programs\General Harness`），而非全局 `%ProgramFiles%`；
 - 安装包内置引擎二进制、`config.yaml`、启动脚本、GUI、示例 GGUF 与四个厂商插件配置；
@@ -91,13 +92,13 @@
 - **桌面快捷方式默认创建**（v0.3.1 起 `[Tasks] desktopicon` 不再带 `Flags: unchecked`）；开始菜单快捷方式始终创建。
 - **品牌图标**：安装程序自身、桌面与开始菜单全部快捷方式、控制面板卸载项统一使用 `assets/general-harness.ico`（多尺寸 16/20/24/32/40/48/64/128/256，32bpp），安装后该图标随包落到 `{app}\general-harness.ico`。
 
-> `installer.iss` 是当前唯一的打包脚本（输出到 `release_assets/`，文件名取自 `#define MyAppVersion`）；该文件的 `MyAppVersion` 当前已是 `0.3.2`，与本文档一致。
+> `installer.iss` 是当前唯一的打包脚本（输出到 `release_assets/`，文件名取自 `#define MyAppVersion`）；该文件的 `MyAppVersion` 当前已是 `0.3.3`，与本文档一致。
 
 ### 方式二：绿色压缩包
 
 安装包之外，引擎本身是单文件零依赖的：把发行目录整体拷贝到任意位置，双击 `start.bat` 或直接运行 `bin\gh_upx.exe` 即可使用。
 
-> 说明：仓库内**没有**提供绿色包（zip）的打包脚本——`installer.iss` 只产出安装包。自 v0.3.0 起，[Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 会随安装包一并提供发行目录的 zip（如 `General-Harness-v0.3.2.zip`，与安装包同源）；若自行压缩发行目录，文件名不受本仓库约束。
+> 说明：仓库内**没有**提供绿色包（zip）的打包脚本——`installer.iss` 只产出安装包。自 v0.3.0 起，[Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 会随安装包一并提供发行目录的 zip（如 `General-Harness-v0.3.3.zip`，与安装包同源）；若自行压缩发行目录，文件名不受本仓库约束。
 
 ### 一键启动脚本
 
@@ -173,39 +174,70 @@ curl http://127.0.0.1:8000/v1/models
 
 ## 终端 CLI 模式
 
-引擎内置终端交互模式（`gh chat` 或直接运行 `bin\gh_upx.exe`）：
+引擎内置终端交互模式（`gh chat` 或直接运行 `bin\gh_upx.exe`）。v0.3.3 起，CLI 能力与桌面 GUI 基本对齐：
 
 ```
 ═══ General Harness CLI ═══
-云端厂商: 4 · 本地 GGUF: 1 · 退出输入 /exit
+云端厂商 4 · 本地 GGUF 1 · 模型 deepseek/deepseek-chat
+输入 /help 看命令，/exit 退出；Ctrl+C 中断当前生成
 
-你 > 你好，介绍一下自己
-助手 > …（ANSI 绿色流式输出）
+你 [deepseek-chat | 联网:关] › 介绍一下你自己
+助手 › 我是…（ANSI 绿色流式输出）
+⏱ 0.9s · 输出 49 字
+```
+
+三种用法：
+
+```bash
+gh chat                          # 交互模式
+gh chat --repl                   # 强制交互模式（stdout 被重定向时也可用）
+echo "总结这段日志" | gh chat     # 管道模式：stdout 只有正文，可直接重定向
 ```
 
 ### 内置命令
 
 | 命令 | 说明 |
 | --- | --- |
-| `/model <名称>` | 切换模型（如 `/model qwen/qwen-plus`、`/model local/demo-qwen2`） |
-| `/models` | 列出全部云端与本地模型（ANSI 彩色） |
-| `/search on\|off\|status` | 会话内联网检索开关（v0.3.0 新增）；不带参数等同 `status`，打印“联网检索: 开/关 · 后端: X · 检索词模式: Y” |
+| `/model <名称或序号>` | 切换模型（`/model qwen/qwen-plus`、`/model local/demo-qwen2`，或 `/model 2` 按 `/models` 序号） |
+| `/models` | 列出全部云端与本地模型；`▸` 标记当前模型，`[视觉]` 标记支持图片的模型 |
+| `/think [on\|off]` | 思考过程展开 / 折叠（默认折叠，只显示 `💭 思考中… N 字`） |
+| `/search on\|off\|status` | 会话内联网检索开关（v0.3.0 新增）；不带参数等同 `status` |
+| `/search list` | 列出搜索后端与就绪状态（缺环境变量等会直接说明原因） |
+| `/search backend <名>` | 切换搜索后端（仅本次运行生效，不写回配置） |
 | `/web <检索词>` | 单次联网检索并打印编号来源，不进对话历史（v0.3.0 新增） |
+| `/key` | 查看各厂商 Key 状态（掩码显示；占位符 Key 会标注“调用会上游 401”） |
+| `/key <厂商> <密钥>` | 写入 `keys.yaml` 并热加载，立即生效（v0.3.1 新增） |
+| `/key <厂商> -` | 清除该厂商的覆盖，回退到插件配置（v0.3.3 新增） |
+| `/usage [1d\|7d\|30d\|all]` | 用量统计，按时间桶画方块条形图（v0.3.3 新增） |
+| `/usage conv` | 最近会话明细：会话 ID / 模型 / tokens（v0.3.3 新增） |
+| `/config` | 查看当前生效配置：监听、限流、鉴权、模型、别名、检索、Agent、文件路径（v0.3.3 新增） |
+| `/history` | 本次会话轮数与最近几条摘要（v0.3.3 新增） |
 | `/clear` | 清空当前会话历史 |
-| `/help` | 显示命令帮助 |
+| `/cls` | 清屏（保留历史） |
+| `/help` | 分组显示命令帮助 |
 | `/exit` / `/quit` | 退出 CLI |
 
 联网检索开启后，回答下方会打印编号来源（灰色）：
 
 ```
-助手 >
-…（思考指示符，随后绿色流式正文）
+助手 › 📡 已检索到 3 条来源
+…（绿色流式正文）
 
-来源:
-  [1] 标题 — https://example.com/page
+来源
+  [1] 标题
+      https://example.com/page
 ```
 
-> **关于思考段**：当前实现的 CLI 只在正文开始前打印一个青色「…」指示符，`chunk.thinking`（上游 `reasoning_content`）**不会被打印或折叠展示**——早期文档宣称的“彩色思考段折叠 / `/thinking` 命令”并未实现。GUI 侧的「💭 思考过程」折叠面板是有的。
+> **关于思考段**（v0.3.3 起已实现）：终端里思考过程默认折叠成一行 `💭 思考中… N 字`，
+> 原地刷新（节流到每 120ms / 每 5 字）；`/think on` 后以灰色完整展开。
+
+### 交互细节
+
+- **Ctrl+C 只中断当前生成**：保留已输出正文并提示 `⏹ 已中断`，不会退出程序；空闲时按才退出。
+- **多行输入**：行尾加 `\` 续行，方便粘贴整段内容。
+- **错误提示**：401 提示 `/key <厂商> <密钥>`；429 / 连接错误给出对应排查方向。
+- **颜色**：仅在真实终端着色；`NO_COLOR` 或重定向输出时自动关闭。
+- **管道模式**：`echo "问题" | gh chat`，stdout 只有正文（状态与统计信息不混入）。
 
 ### 引擎子命令（`bin\gh_upx.exe <子命令>`）
 
@@ -378,7 +410,7 @@ data: [DONE]
 | 端点 | 响应 | 说明 |
 | --- | --- | --- |
 | `GET /health` | `{"status":"ok"}` | 不受限流与鉴权影响 |
-| `GET /` | `{"service":"General Harness","ui":"/ui","version":"0.3.2"}` | 服务标识、版本号与内置界面入口，不限流 |
+| `GET /` | `{"service":"General Harness","ui":"/ui","version":"0.3.3"}` | 服务标识、版本号与内置界面入口，不限流 |
 | `GET /ui` | 内置浏览器界面（HTML） | v0.3.1 新增；与桌面 GUI 功能等价（含 v0.3.2 补上的 🔑 密钥面板），无需 Python；同样不限流 |
 
 > v0.2.4 的根路径会额外返回 `"docs":"/docs"`，但引擎**从未实现 `/docs` 路由**（访问实测 404），该误导字段已在 v0.3.0 移除。
@@ -708,6 +740,26 @@ curl -X POST http://127.0.0.1:8000/v1/keys \
 
 ---
 
+## v0.3.3 修复
+
+> 起因：CLI 一直是「能用但不顺手」——思考段只打个「…」、没有用量面板、看不到配置、
+> 生成中途没法停。这一版把桌面 GUI 的能力搬进终端。
+
+| 问题 | 修复 |
+| --- | --- |
+| CLI 不显示思考过程，`reasoning_content` 被丢弃（早期文档宣称的折叠并未实现） | 默认折叠成一行 `💭 思考中… N 字` 原地刷新（节流到 120ms / 5 字）；`/think on` 以灰色完整展开；重定向时只输出一行汇总 |
+| 生成过程中按 Ctrl+C 会杀掉整个程序 | 信号处理区分状态：生成中只置取消标志，流式回调返回错误让 `postStream` 关闭连接，保留已输出正文并提示 `⏹ 已中断`；空闲时才退出 |
+| 没有用量面板，看统计只能开 GUI 或 curl | `/usage [1d\|7d\|30d\|all]` 按时间桶画方块条形图（只显示有流量的桶）；`/usage conv` 看最近会话 |
+| 看不到当前生效配置，排障要翻 YAML | `/config` 打印监听、限流、鉴权、模型、别名、检索状态与后端、Agent、配置文件/密钥文件/用量文件路径、会话 ID |
+| 密钥只能设置不能清除，填错了只能手改 `keys.yaml` | `/key <厂商> -` 删除覆盖并热加载，回退到插件配置 |
+| 搜索后端只能看不能换 | `/search list` 列出后端与就绪原因；`/search backend <名>` 切换（仅本次运行） |
+| 无法脚本化调用（只能交互） | `echo "问题" \| gh chat` 管道模式：stdout 只有正文；`--repl` 可在重定向下强制交互 |
+| 模型列表看不出当前模型与视觉能力 | `▸` 标记当前模型、`[视觉]` 标记图片模型、支持 `/model <序号>` |
+| 提示符不显示状态 | `你 [deepseek-chat \| 联网:关] ›`，模型与联网开关一眼可见 |
+| 错误只有一句“内部错误”，不知道下一步做什么 | 401 → 提示 `/key`；429 / 连接错误 → 给出排查方向；结尾打印耗时与字数 |
+
+---
+
 ## v0.3.2 修复
 
 > 起因：用户在**没装 Python 的 Windows 沙盒**里装 v0.3.1 体验——能打开 `/ui` 并正常对话，
@@ -993,7 +1045,7 @@ upx --lzma -9 -o ../bin/gh_upx.exe ../bin/gh.exe
 ## 运行测试
 
 ```bash
-# Go 引擎测试：79 个测试函数（单元 + HTTP 集成），实测全绿
+# Go 引擎测试：101 个测试函数（单元 + HTTP 集成 + CLI），实测全绿
 cd engine && go test ./... -count=1
 
 # Python 组件测试：7 个测试（GUI 代理、前端页面、启动器逻辑），实测全绿
@@ -1001,7 +1053,7 @@ cd engine && go test ./... -count=1
 python -m unittest discover -s tests
 ```
 
-实测结果（v0.3.2）：`go test ./... -count=1` → `ok gh-engine`，79 个测试函数全部通过、无跳过；Python 侧 `Ran 7 tests ... OK`。分布为：既有测试 33 个（`engine_test.go` 9、`integration_test.go` 10、`agent_test.go` 8、`ollama_test.go` 2、`cloud_test.go` 2、`streaming_test.go` 2）+ v0.3.0 新增 36 个（`htmltext_test.go` 12、`search_test.go` 11、`search_chat_test.go` 8、`search_api_test.go` 3、`cloud_test.go` 新增 2 个 keep-alive 回归测试）+ v0.3.1/v0.3.2 新增 8 个（`ui_test.go` 2、`keys_test.go` 6：覆盖走查、YAML 引号、掩码、`/v1/keys` 写入与热加载、参数校验、非本机访问拒绝）。
+实测结果（v0.3.3）：`go test ./... -count=1` → `ok gh-engine`，101 个测试函数全部通过、无跳过；Python 侧 `Ran 7 tests ... OK`。分布为：既有测试 33 个（`engine_test.go` 9、`integration_test.go` 10、`agent_test.go` 8、`ollama_test.go` 2、`cloud_test.go` 2、`streaming_test.go` 2）+ v0.3.0 新增 36 个（`htmltext_test.go` 12、`search_test.go` 11、`search_chat_test.go` 8、`search_api_test.go` 3、`cloud_test.go` 新增 2 个 keep-alive 回归测试）+ v0.3.1/v0.3.2 新增 8 个（`ui_test.go` 2、`keys_test.go` 6：覆盖走查、YAML 引号、掩码、`/v1/keys` 写入与热加载、参数校验、非本机访问拒绝）+ v0.3.3 新增 22 个（`cli_test.go`：命令解析、模型切换、思考折叠与展开、Ctrl+C 中断、用量表格与会话列表、密钥设置与清除、后端就绪校验、管道模式、失败不入历史）。
 
 测试覆盖：YAML 子集解析、GGUF 解析（含非法魔数）、用量统计（时间序列 / 对话聚合 / custom 区间 / 持久化）、Key 解析与多 Key 选择、厂商注册、模型路由、限流（含 429）、鉴权、Ollama 兼容端点、流式与非流式记账、SSE 解析、手写 HTTP 客户端的 chunked 解码与 keep-alive+Content-Length 收尾（含“去掉修复即失败”的回归测试）、Agent 白名单/黑名单/超时/输出截断、检索核心（关键词提取、后端调用、缓存、结果排序与 URL 规范化）、`/v1/search` 与 `/v1/search/backends` 状态码、对话侧 `web_search` 注入与失败降级、HTML 正文抽取与 SSRF 地址校验、以及 GUI 代理转发与前端单文件完整性。
 
@@ -1129,7 +1181,7 @@ curl http://127.0.0.1:8000/api/tags
 
 - 普通输出：请求完成后一次性返回完整 JSON；
 - 流式输出（`stream: true`）：以 SSE 逐块推送 `content`，以 `data: [DONE]` 结束，首字延迟更低、体验更流畅；
-- 思考类模型在流式下额外返回 `thinking`（由上游 `reasoning_content` 映射而来），GUI 侧有「💭 思考过程」折叠面板可展开查看；**CLI 侧目前不展示思考内容**，只打印一个「…」指示符后输出正文。
+- 思考类模型在流式下额外返回 `thinking`（由上游 `reasoning_content` 映射而来），GUI 侧有「💭 思考过程」折叠面板可展开查看；**CLI 侧默认折叠为一行 `💭 思考中… N 字`**（`/think on` 可展开为灰色正文；重定向时只输出一行汇总）后输出正文。
 </details>
 
 <details>
@@ -1190,7 +1242,7 @@ curl http://127.0.0.1:8000/api/tags
 - **引擎选择不一致**：`start.bat` / `restart.bat` 优先 `gh_upx.exe` 并回退 `gh.exe`；`start.py` 固定使用 `bin/gh.exe`，无 UPX 优先逻辑也无回退。
 - **没有绿色包打包脚本**：`installer.iss` 是仓库唯一的打包脚本，只产出 `.exe` 安装包；zip 绿色包需自行压缩发行目录。
 - **用量明细会丢最旧记录**：内存最多保留 10000 条并在超出后静默丢弃最旧记录；每 50 条才批量落盘，进程被强杀时最近最多 49 条可能丢失。
-- **CLI 不展示思考内容**：`reasoning_content` 目前只在 GUI 的「💭 思考过程」面板中可见，CLI 仅打印一个「…」指示符。
+- **CLI 的思考内容是纯文本**：`reasoning_content` 默认折叠成一行 `💭 思考中… N 字`，`/think on` 展开为灰色正文——思考文本内部没有语法着色，重定向到文件时只输出一行汇总（不刷屏）。
 - **联网检索的隐私边界**：引擎不外发问题原文，但**检索词本身仍会暴露关注方向**；搜索引擎或自建服务端的访问日志可以记录这些词。
 - **测试范围有限**：不做真实厂商 API 的端到端测试，也不做真实搜索引擎的在线测试（检索链路使用本地测试替身）。
 - **仓库内提交二进制**：`bin/` 与 `models/*.gguf` 直接纳入版本控制以方便开箱即用。

@@ -11,7 +11,7 @@
 - **Engine**: `bin/gh_upx.exe` (2,056,704 bytes ≈ 1.95 MB) / `bin/gh.exe` (6,433,280 bytes ≈ 6.10 MB) — single file, zero third-party dependencies, ready to run after extraction
 - **Engine source**: `engine/` — pure Go standard library (including a hand-written HTTP layer), no external modules
 - **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; the engine also serves an equivalent built-in page at `GET /ui` (v0.3.1, key panel added in v0.3.2), which `start.bat` opens automatically when Python or pywebview is missing
-- **Version**: `0.3.2` (new in this release: the 🔑 key panel is now part of the built-in page `GET /ui`, so users without Python can paste a provider key there too — see [Fixed in v0.3.2](#fixed-in-v032); the built-in page itself landed in [v0.3.1](#fixed-in-v031))
+- **Version**: `0.3.3` (new in this release: the terminal CLI now matches the desktop GUI — collapsible thinking, usage charts, live config view, key clearing, backend switching, Ctrl+C interrupts only the current generation, and pipe mode — see [Fixed in v0.3.3](#fixed-in-v033); the 🔑 key panel landed in [v0.3.2](#fixed-in-v032); the built-in page and brand icon in [v0.3.1](#fixed-in-v031))
 
 ---
 
@@ -47,6 +47,7 @@
 - [Running Tests](#running-tests)
 - [Size Design Notes](#size-design-notes)
 - [API Keys & Credentials](#api-keys--credentials)
+- [Fixed in v0.3.3](#fixed-in-v033)
 - [Fixed in v0.3.2](#fixed-in-v032)
 - [Fixed in v0.3.1](#fixed-in-v031)
 - [Fixed in v0.3.0](#fixed-in-v030)
@@ -76,7 +77,7 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-Setup-0.3.2.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
+Download `General-Harness-Setup-0.3.3.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
 
 - `DefaultDirName={autopf}\General Harness` combined with `PrivilegesRequired=lowest` means the default install target is **the current user's program directory**, not a machine-wide one;
 - The installer bundles everything needed (engine binary, config, GUI, sample models);
@@ -143,7 +144,7 @@ curl http://127.0.0.1:8000/health
 
 # 3) Identify the service and its version
 curl http://127.0.0.1:8000/
-# → {"service":"General Harness","ui":"/ui","version":"0.3.2"}
+# → {"service":"General Harness","ui":"/ui","version":"0.3.3"}
 
 # 4) List models (includes the bundled local GGUF sample)
 curl http://127.0.0.1:8000/v1/models
@@ -171,25 +172,40 @@ The engine has a built-in terminal interactive mode (`gh chat` or run `bin\gh_up
 
 ```
 ═══ General Harness CLI ═══
-Cloud providers: 4 · Local GGUF: 1 · Type /exit to quit
+Cloud providers: 4 · Local GGUF: 1 · Model deepseek/deepseek-chat
+Type /help for commands, /exit to quit; Ctrl+C interrupts the current answer
 
-You > Hello, introduce yourself
-Assistant > …(ANSI green streaming output)
+You [deepseek-chat | web:off] › Hello, introduce yourself
+Assistant ▸ …(streamed in green; timing and char count printed at the end)
 ```
 
-The CLI prints a short indicator (`…`) when content starts arriving and then streams the answer in green. It does **not** display `reasoning_content` thinking text — the "…" is only an indicator, not a colored or collapsible thinking block (see [Known Limitations](#known-limitations)).
+The prompt shows the current model and the web-search switch. `reasoning_content` (thinking) is **collapsed into a single line** — `💭 思考中… N 字`, refreshed in place — expandable with `/think on` (dim grey) or hidden with `/think off`. When stdout is redirected the thinking text is replaced by a one-line summary instead of escape sequences.
 
 ### Built-in Commands
 
 | Command | Description |
 | --- | --- |
 | `/model <name>` | Switch model (e.g. `/model qwen/qwen-plus`, `/model local/demo-qwen2`) |
-| `/models` | List all cloud and local models (ANSI colored) |
-| `/search on\|off\|status` | Turn session web search on/off, or show the current state (backend and query mode) |
+| `/model <index>` | Switch by the index shown in `/models` |
+| `/models` | List all cloud and local models; `▸` marks the current one, `[视觉]` marks image models |
+| `/think on\|off` | Expand / collapse the thinking process |
+| `/search on\|off\|status` | Turn session web search on/off, or show the current state |
+| `/search list` | List configured search backends with readiness and reason |
+| `/search backend <name>` | Switch the search backend for this run |
 | `/web <query>` | Run a single search and print numbered sources (not added to the conversation) |
+| `/key <provider> <key>` | Store a provider key in `keys.yaml`, hot-reloaded, effective immediately |
+| `/key <provider> -` | Delete the override and fall back to the plugin config |
+| `/usage [1d\|7d\|30d\|all]` | Usage over time as a block bar chart (only buckets with traffic are shown) |
+| `/usage conv` | Recent conversations |
+| `/config` | Show the effective configuration and the file paths in use |
+| `/history` | Message count in the current session |
 | `/clear` | Clear the current conversation history |
 | `/help` | Show command help |
 | `/exit` / `/quit` | Exit the CLI |
+
+`/search on` is refused when `search.enabled=false`. The first time it turns on, it prints the privacy notice: what is sent to the search service is the locally extracted query terms (or the `rewrite_model`-generated terms), never the raw question.
+
+**Ctrl+C** never kills the program mid-answer: while a reply streams it only cancels that generation (the partial text stays, `⏹ 已中断` is printed); when idle it exits. **Pipe mode**: `echo "question" | gh chat` prints only the answer body to stdout — status lines and statistics are suppressed so output can be piped/scripted (`--repl` forces interactive mode under redirection).
 
 `/search on` is refused when `search.enabled=false`. The first time it turns on, it prints the privacy notice: what is sent to the search service is the locally extracted query terms (or the `rewrite_model`-generated terms), never the raw question.
 
@@ -550,7 +566,7 @@ Groups by session (ordered by last activity, newest first) and sums the tokens o
 
 ### Root Endpoint
 
-`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.2"}` (not rate-limited)
+`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.3"}` (not rate-limited)
 
 `GET /ui` → the built-in browser UI (HTML, 13,307 bytes embedded via `go:embed`; not rate-limited).
 It matches the desktop GUI feature-for-feature and needs no Python.
@@ -780,7 +796,7 @@ cd engine && go test ./... -count=1
 python -m unittest discover -s tests
 ```
 
-Measured state of the suite: **79 Go test functions, all green, none skipped** (`go test ./... -count=1` → `ok gh-engine`) — the 33 pre-existing engine / integration / agent tests plus 38 new tests covering web search, HTML extraction, SSRF, chat integration, the built-in `/ui`, and the keep-alive/Content-Length fix (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, `ui_test.go` 2, plus 2 new cases in `cloud_test.go`), plus 8 more for key management (`keys_test.go` 6: override round-trip, YAML quoting, masking, `/v1/keys` write + hot reload, validation, loopback-only; and 2 assertions added to `ui_test.go`). **7 Python tests, all green** (`Ran 7 tests … OK`).
+Measured state of the suite: **101 Go test functions, all green, none skipped** (`go test ./... -count=1` → `ok gh-engine`) — the 33 pre-existing engine / integration / agent tests plus 38 new tests covering web search, HTML extraction, SSRF, chat integration, the built-in `/ui`, and the keep-alive/Content-Length fix (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, `ui_test.go` 2, plus 2 new cases in `cloud_test.go`), plus 8 more for key management (`keys_test.go` 6: override round-trip, YAML quoting, masking, `/v1/keys` write + hot reload, validation, loopback-only; and 2 assertions added to `ui_test.go`). **7 Python tests, all green** (`Ran 7 tests … OK`).
 
 What is actually covered: YAML parsing, GGUF parsing (including invalid magic), usage stats (time series / conversation aggregation / custom range / persistence), key parsing and multi-key selection, provider registration, model routing, rate limiting (including 429), auth, the Ollama endpoints, streaming & non-streaming accounting, SSE parsing, the hand-written chunked reader plus keep-alive + `Content-Length` framing (with regression tests that fail if the fix is removed), the root endpoint reporting service/version/ui, agent allow-list/block-list/timeout/truncation, search config parsing and keywords, URL normalization and de-duplication, cache and fetch-content behavior, search error mapping, `search.backends` readiness, injected-context building, chat `web_search` (unchanged when absent, context+sources, explicit query, rewrite mode, streaming phase frame, graceful degradation, 403 when disabled), HTML extraction, entity decoding, SSRF rejection, redirect handling and truncation, GUI proxy forwarding, and single-file frontend integrity.
 
@@ -851,6 +867,27 @@ An unknown `provider` returns 404; empty `provider`/`key` returns 400.
 - Security: `/v1/keys` only accepts **loopback** callers (403 otherwise) and is exempt from `gateway_api_key` - it is the credential bootstrap endpoint. Never expose the engine to the public internet.
 
 > `keys.yaml` stores keys in **plaintext** (same as `plugins/*/config.yaml`). It is more convenient than environment variables but should not be shared; use `${ENV_VAR}` when you need stronger separation.
+
+---
+
+## Fixed in v0.3.3
+
+> Why: the CLI was usable but not comfortable — thinking printed as a bare "…", no usage panel,
+> no way to inspect the live config, no way to stop a runaway answer. This release moves the
+> desktop GUI's capabilities into the terminal.
+
+| Problem | Fix |
+| --- | --- |
+| `reasoning_content` was discarded; the only trace was a "…" | Collapsed by default into `💭 思考中… N 字`, refreshed in place (throttled to 120 ms / 5 chars); `/think on` expands it in dim grey; under redirection a one-line summary replaces the escape sequences |
+| Ctrl+C killed the whole program mid-answer | Signal handler is state-aware: while streaming it only sets a cancel flag, the stream callback returns an error so `postStream` closes the connection, partial text is kept and `⏹ 已中断` is printed; when idle it exits |
+| No usage panel — stats required the GUI or curl | `/usage [1d\|7d\|30d\|all]` draws a block bar chart per bucket (only buckets with traffic); `/usage conv` lists recent conversations |
+| Effective config was invisible without reading YAML | `/config` prints listen address, rate limit, auth, models, aliases, search state and backends, agent, the config/keys/usage file paths and the session id |
+| Keys could be set but never removed | `/key <provider> -` deletes the override, hot-reloads and falls back to the plugin config |
+| Search backend was read-only | `/search list` shows every backend with its readiness reason; `/search backend <name>` switches for this run |
+| No way to script the CLI | `echo "question" \| gh chat` prints only the answer body to stdout; `--repl` forces interactive mode under redirection |
+| `/models` did not show the current model or vision support | `▸` marks the current model, `[视觉]` marks image models, `/model <index>` switches by index |
+| The prompt carried no state | `You [deepseek-chat \| web:off] ›` shows model and web-search state at a glance |
+| Errors were a bare "internal error" | 401 → suggests `/key`; 429 / connection failures → give a direction to check; timing and char count are printed at the end |
 
 ---
 
@@ -1008,7 +1045,7 @@ curl http://127.0.0.1:8000/api/tags
 - Normal: returns the complete JSON once the request finishes;
 - Streaming (`stream: true`): pushes `content` chunk by chunk over SSE, ending with `data: [DONE]` — lower time-to-first-token, smoother experience;
 - With `web_search`, one extra `phase:"search"` frame carrying `sources` precedes the content chunks;
-- Thinking models additionally return `thinking` (upstream `reasoning_content`) in streaming mode; the **GUI** renders it in a collapsible panel, while the **CLI** only prints a "…" indicator and the answer text.
+- Thinking models additionally return `thinking` (upstream `reasoning_content`) in streaming mode; the **GUI** renders it in a collapsible panel, and the **CLI** folds it into one `💭 思考中… N 字` line (`/think on` expands it as dim grey text; under redirection only a one-line summary is printed) before the answer body.
 </details>
 
 <details>
@@ -1075,7 +1112,7 @@ Usually a port conflict or a config error:
 - **Never commit real API keys**: in `plugins/*/config.yaml`, prefer `${ENV_VAR}` notation; ensure real keys are not committed to version control.
 - **YAML subset parser**: the hand-written YAML parser does not support flow style (`[]`/`{}`) or multi-line strings — only the shapes this project's config requires.
 - **Binaries in repo**: `bin/` and `models/*.gguf` are committed for out-of-box use; use GitHub Releases to slim the repo if needed.
-- **The CLI does not display `reasoning_content`**: it prints a "…" indicator and then the answer text. The colored/collapsible thinking output is GUI-only.
+- **CLI thinking display is text-only**: `reasoning_content` is folded into a single `💭 思考中… N 字` line and expanded with `/think on` in dim grey — there is no syntax coloring inside the thinking text, and under stdout redirection only a one-line summary is printed.
 - **Launcher port handling is inconsistent**: `start.py` reads `server.port` (via PyYAML, silently falling back to 8000 when PyYAML is missing), while `start.bat` / `restart.bat` / `stop.bat` hard-code port 8000 and ignore `server.port`. `start.py` always uses `bin\gh.exe` (no `gh_upx.exe` preference and no fallback); `start.bat` never calls `start.py`.
 - **Usage records are bounded and batched**: at most 10000 records are kept in memory (oldest silently dropped) and flushed every 50 entries, so a hard kill can lose up to 49 recent records.
 - **No portable packaging**: `installer.iss` (Inno Setup) is the only packaging script; the desktop shortcut is created by default since v0.3.1 (previously unchecked by default and `PrivilegesRequired=lowest` means the default install goes to the current user's program directory.
