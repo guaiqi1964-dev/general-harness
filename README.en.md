@@ -11,7 +11,7 @@
 - **Engine**: `bin/gh_upx.exe` (2,056,704 bytes ≈ 1.95 MB) / `bin/gh.exe` (6,433,280 bytes ≈ 6.10 MB) — single file, zero third-party dependencies, ready to run after extraction
 - **Engine source**: `engine/` — pure Go standard library (including a hand-written HTTP layer), no external modules
 - **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; the engine also serves an equivalent built-in page at `GET /ui` (v0.3.1, key panel added in v0.3.2), which `start.bat` opens automatically when Python or pywebview is missing
-- **Version**: `0.3.3` (new in this release: the terminal CLI now matches the desktop GUI — collapsible thinking, usage charts, live config view, key clearing, backend switching, Ctrl+C interrupts only the current generation, and pipe mode — see [Fixed in v0.3.3](#fixed-in-v033); the 🔑 key panel landed in [v0.3.2](#fixed-in-v032); the built-in page and brand icon in [v0.3.1](#fixed-in-v031))
+- **Version**: `0.3.4` (new in this release: GUI mode starts silently — a double-click now shows only the Python window, with no console windows at all; see [Fixed in v0.3.4](#fixed-in-v034); the CLI overhaul landed in [Fixed in v0.3.3](#fixed-in-v033); the 🔑 key panel in [v0.3.2](#fixed-in-v032); the built-in page and brand icon in [v0.3.1](#fixed-in-v031))
 
 ---
 
@@ -47,6 +47,7 @@
 - [Running Tests](#running-tests)
 - [Size Design Notes](#size-design-notes)
 - [API Keys & Credentials](#api-keys--credentials)
+- [Fixed in v0.3.4](#fixed-in-v034)
 - [Fixed in v0.3.3](#fixed-in-v033)
 - [Fixed in v0.3.2](#fixed-in-v032)
 - [Fixed in v0.3.1](#fixed-in-v031)
@@ -77,7 +78,7 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-Setup-0.3.3.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
+Download `General-Harness-Setup-0.3.4.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
 
 - `DefaultDirName={autopf}\General Harness` combined with `PrivilegesRequired=lowest` means the default install target is **the current user's program directory**, not a machine-wide one;
 - The installer bundles everything needed (engine binary, config, GUI, sample models);
@@ -144,7 +145,7 @@ curl http://127.0.0.1:8000/health
 
 # 3) Identify the service and its version
 curl http://127.0.0.1:8000/
-# → {"service":"General Harness","ui":"/ui","version":"0.3.3"}
+# → {"service":"General Harness","ui":"/ui","version":"0.3.4"}
 
 # 4) List models (includes the bundled local GGUF sample)
 curl http://127.0.0.1:8000/v1/models
@@ -566,7 +567,7 @@ Groups by session (ordered by last activity, newest first) and sums the tokens o
 
 ### Root Endpoint
 
-`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.3"}` (not rate-limited)
+`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.4"}` (not rate-limited)
 
 `GET /ui` → the built-in browser UI (HTML, 13,307 bytes embedded via `go:embed`; not rate-limited).
 It matches the desktop GUI feature-for-feature and needs no Python.
@@ -867,6 +868,21 @@ An unknown `provider` returns 404; empty `provider`/`key` returns 400.
 - Security: `/v1/keys` only accepts **loopback** callers (403 otherwise) and is exempt from `gateway_api_key` - it is the credential bootstrap endpoint. Never expose the engine to the public internet.
 
 > `keys.yaml` stores keys in **plaintext** (same as `plugins/*/config.yaml`). It is more convenient than environment variables but should not be shared; use `${ENV_VAR}` when you need stronger separation.
+
+---
+
+## Fixed in v0.3.4
+
+> Why: double-clicking the desktop icon popped two or three console windows, and you had to wait
+> several seconds before the window you actually wanted appeared.
+
+| Problem | Fix |
+| --- | --- |
+| GUI mode left 2-3 console windows behind: the `start.bat` window itself, the engine's `cmd /k` window and the GUI's `cmd /k` window | The GUI branch now hands over to `pythonw start.py --gui` and exits at once (measured: the script window lives 0.6 s); the engine starts with `CREATE_NO_WINDOW` and the GUI with `pythonw`, so only the pywebview window remains on screen |
+| Once the engine was silent, its log disappeared and failures were unreadable | Engine stdout/stderr is appended to `{app}\engine.log`, and startup failures are reported in a system message box |
+| Double-clicking again while the GUI was already running opened a second window | `start.py` probes `127.0.0.1:8765` first and returns immediately when it already answers, so nothing starts twice |
+| On a machine without pywebview a double-click did nothing at all (pythonw has no console, so the traceback vanished) | Falls back to the engine's built-in page `GET /ui`, opens the browser and explains the reason in a message box; the engine keeps running for that page |
+| When a `.bat` file was saved with LF endings or UTF-8 Chinese comments, cmd failed to parse it and the script exited silently | `start.bat` / `restart.bat` are kept CRLF + pure ASCII, and the constraint is documented in the scripts themselves |
 
 ---
 

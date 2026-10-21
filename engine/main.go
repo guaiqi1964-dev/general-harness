@@ -17,7 +17,7 @@ import (
 var ROOT string
 
 // engineVersion 引擎版本号（与 installer.iss、README 中的版本号保持一致）。
-const engineVersion = "0.3.3"
+const engineVersion = "0.3.4"
 
 func init() {
 	// 优先使用工作目录（启动脚本 cd 到发行版根目录再运行）；
