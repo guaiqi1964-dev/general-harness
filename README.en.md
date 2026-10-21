@@ -790,7 +790,7 @@ The engine source has zero third-party dependencies (pure standard library): a h
 ## Running Tests
 
 ```bash
-# Go engine tests (unit + HTTP integration, 79 test functions)
+# Go engine tests (unit + HTTP integration, 101 test functions)
 cd engine && go test ./... -count=1
 
 # Python component tests (GUI proxy, frontend page, launcher logic)
