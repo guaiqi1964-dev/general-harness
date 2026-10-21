@@ -16,12 +16,53 @@ for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v DEEPSEEK_API_KEY 2^>n
 for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTPS_PROXY 2^>nul') do set "HTTPS_PROXY=%%a"
 for /f "tokens=3" %%a in ('reg query "HKCU\Environment" /v HTTP_PROXY 2^>nul') do set "HTTP_PROXY=%%a"
 
+rem ---- GUI mode: silent restart (no console windows) ----
+if "%MODE%"=="gui" goto :gui_restart
+
 echo =============================================
 echo   General Harness - One-click Restart
 echo   Port: %PORT%    Mode: %MODE%
 if defined DEEPSEEK_API_KEY (echo   API Key: configured [from registry]) else (echo   API Key: not configured)
 echo =============================================
 
+call :stop_old
+call :start_engine
+if errorlevel 1 ( pause & exit /b 1 )
+
+if "%MODE%"=="server" (
+    echo [MODE] Server-only mode. Engine runs in its own window.
+    pause
+    exit /b 0
+)
+
+echo [MODE] Terminal CLI mode. Type /exit or Ctrl+C to quit.
+"%ENGINE%" chat
+exit /b 0
+
+rem ============================================================
+rem  GUI restart: no console window. stop old engine/GUI, then let
+rem  start.py relaunch the engine (CREATE_NO_WINDOW) + pythonw GUI.
+rem ============================================================
+:gui_restart
+call :stop_old
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8765 .*LISTENING"') do (
+    tasklist /fi "PID eq %%p" /fo csv /nh 2>nul | findstr /i "python.exe pythonw.exe" >nul
+    if not errorlevel 1 taskkill /F /PID %%p >nul 2>&1
+)
+ping -n 2 127.0.0.1 >nul
+where pythonw >nul 2>&1
+if errorlevel 1 goto :gui_restart_fallback
+start "" pythonw "%~dp0start.py" --gui --port %PORT%
+exit /b 0
+
+:gui_restart_fallback
+echo [MODE] Python GUI not available - using the built-in browser UI.
+call :start_engine
+if errorlevel 1 ( pause & exit /b 1 )
+start "" "http://127.0.0.1:%PORT%/ui"
+exit /b 0
+
+:stop_old
 echo [STOP] Stopping old engine...
 if exist "%CD%\gateway.pid" (
     set /p OLDPID=<"%CD%\gateway.pid"
@@ -40,60 +81,24 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% .*LISTENING"') do (
         )
     )
 )
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":8765 .*LISTENING"') do (
-    tasklist /fi "PID eq %%p" /fo csv /nh 2>nul | findstr /i "python.exe" >nul
-    if not errorlevel 1 (
-        echo [STOP] Killing old GUI PID %%p
-        taskkill /F /PID %%p >nul 2>&1
-    )
-)
-ping -n 2 127.0.0.1 >nul
+exit /b 0
 
+:start_engine
 if not exist "%ENGINE%" (
     echo [ERROR] Engine binary not found: bin\gh_upx.exe / bin\gh.exe
-    pause & exit /b 1
+    exit /b 1
 )
 echo [START] Starting engine...
 start "General Harness Engine" /D "%~dp0" cmd /k ""%ENGINE%" serve --port %PORT%"
 set /a TRY=0
-:wait_loop
+:wait_engine
 set /a TRY+=1
 if !TRY! gtr 30 (
     echo [ERROR] Engine start timeout. Port %PORT% may be in use.
-    pause & exit /b 1
+    exit /b 1
 )
 curl -s -o nul -w "%%{http_code}" --max-time 2 "http://127.0.0.1:%PORT%/health" > "%TEMP%\gh_r.txt" 2>nul
 set /p CODE=<"%TEMP%\gh_r.txt"
-if not "!CODE!"=="200" ( ping -n 2 127.0.0.1 >nul & goto :wait_loop )
+if not "!CODE!"=="200" ( ping -n 2 127.0.0.1 >nul & goto :wait_engine )
 echo [DONE] Engine restarted at http://127.0.0.1:%PORT%
-
-if "%MODE%"=="server" (
-    echo [MODE] Server-only mode. Engine runs in its own window.
-    pause
-    exit /b 0
-)
-if "%MODE%"=="cli" (
-    echo [MODE] Terminal CLI mode. Type /exit or Ctrl+C to quit.
-    "%ENGINE%" chat
-    exit /b 0
-)
-
-rem ---- Default mode: Webview GUI ----
-set "GUI_UP=0"
-curl -s -o nul -w "%%{http_code}" --max-time 2 "http://127.0.0.1:8765/" > "%TEMP%\gh_gui.txt" 2>nul
-set /p GUIPROBE=<"%TEMP%\gh_gui.txt"
-if "%GUIPROBE%"=="200" set "GUI_UP=1"
-if "%GUI_UP%"=="1" (
-    echo [MODE] GUI already running at http://127.0.0.1:8765
-    start "" "http://127.0.0.1:8765"
-    exit /b 0
-)
-echo [MODE] Starting Webview GUI...
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Python not found. GUI mode requires Python 3.10+.
-    echo         Try: restart.bat cli  ^(terminal^)  or  install Python.
-    pause & exit /b 1
-)
-start "General Harness GUI" /D "%~dp0" cmd /k python gui\gui.py --url http://127.0.0.1:%PORT%
 exit /b 0
