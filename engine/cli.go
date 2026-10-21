@@ -263,6 +263,8 @@ func (s *cliSession) handleCommand(text string) (bool, bool) {
 		s.cmdConfig()
 	case "/history":
 		s.cmdHistory()
+	case "/regen", "/retry":
+		s.cmdRegen()
 	case "/clear":
 		s.history = nil
 		s.dim("历史已清空")
@@ -288,6 +290,7 @@ func splitCommand(text string) (string, string) {
 func (s *cliSession) cmdHelp() {
 	s.println(s.paint(ansiBold, "对话"))
 	s.dim("  <文本>            发送消息（\\ 结尾可续行）")
+	s.dim("  /regen            重新生成上一条回答（丢弃该回答及其后的轮次）")
 	s.dim("  /clear            清空对话历史")
 	s.dim("  /cls              清屏")
 	s.dim("  /history          查看本次会话轮数")
@@ -777,6 +780,31 @@ func (s *cliSession) cmdHistory() {
 }
 
 // chat 发送一条消息并流式接收回复。
+// cmdRegen 重新生成上一条回答：丢弃最后一轮问答，用同一个问题重发。
+// 与 GUI 的「🔄 重新生成」等价——覆盖式，不做多分支翻页。
+func (s *cliSession) cmdRegen() {
+	if atomic.LoadInt32(&s.streaming) == 1 {
+		s.fail("正在生成中，等这次结束再试")
+		return
+	}
+	lastUser := -1
+	for i := len(s.history) - 1; i >= 0; i-- {
+		if toStr(s.history[i]["role"]) == "user" {
+			lastUser = i
+			break
+		}
+	}
+	if lastUser < 0 {
+		s.fail("没有可重新生成的提问（对话为空）")
+		return
+	}
+	question := toStr(s.history[lastUser]["content"])
+	dropped := len(s.history) - lastUser
+	s.history = s.history[:lastUser]
+	s.dim("↻ 重新生成：%s（丢弃 %d 条消息）", truncateRunes(strings.ReplaceAll(question, "\n", " "), 40), dropped)
+	s.chat(question)
+}
+
 func (s *cliSession) chat(text string) {
 	s.history = append(s.history, map[string]any{"role": "user", "content": text})
 	s.printf("%s ", s.paint(ansiBold, "助手 ›"))
