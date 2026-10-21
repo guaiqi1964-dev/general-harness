@@ -3,9 +3,9 @@ setlocal enabledelayedexpansion
 title General Harness - Start
 cd /d "%~dp0"
 
-set "ENGINE=%~dp0bin\gh_upx.exe"
+set "ENGINE=%~dp0bin\gh.exe"
 set PORT=8000
-if not exist "%ENGINE%" set "ENGINE=%~dp0bin\gh.exe"
+if not exist "%ENGINE%" set "ENGINE=%~dp0bin\gh_upx.exe"
 
 rem ---- Parse mode arg: default gui (GUI); optional cli / server ----
 set MODE=gui
@@ -74,7 +74,7 @@ if "%HEALTHY%"=="1" (
     exit /b 0
 )
 if not exist "%ENGINE%" (
-    echo [ERROR] Engine binary not found: bin\gh_upx.exe / bin\gh.exe
+    echo [ERROR] Engine binary not found: bin\gh.exe
     exit /b 1
 )
 echo [ENGINE] Starting...

@@ -8,10 +8,10 @@
 > are fully decoupled: use the CLI when only the backend is running, and the GUI
 > when both run together.
 
-- **Engine**: `bin/gh_upx.exe` (2,056,704 bytes ≈ 1.95 MB) / `bin/gh.exe` (6,433,280 bytes ≈ 6.10 MB) — single file, zero third-party dependencies, ready to run after extraction
+- **Engine**: `bin/gh.exe` (6,482,432 bytes ≈ 6.18 MB) — single file, zero third-party dependencies, ready to run after extraction. Since v0.3.5 the release no longer ships a UPX-compressed build: Windows Defender flags it as `Trojan:Win32/Wacatac.B!ml` and quarantines it on extraction.
 - **Engine source**: `engine/` — pure Go standard library (including a hand-written HTTP layer), no external modules
 - **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; the engine also serves an equivalent built-in page at `GET /ui` (v0.3.1, key panel added in v0.3.2), which `start.bat` opens automatically when Python or pywebview is missing
-- **Version**: `0.3.4` (new in this release: GUI mode starts silently — a double-click now shows only the Python window, with no console windows at all; see [Fixed in v0.3.4](#fixed-in-v034); the CLI overhaul landed in [Fixed in v0.3.3](#fixed-in-v033); the 🔑 key panel in [v0.3.2](#fixed-in-v032); the built-in page and brand icon in [v0.3.1](#fixed-in-v031))
+- **Version**: `0.3.5` (new in this release: copy any question or answer, delete a single turn, and regenerate an answer — see [Fixed in v0.3.5](#fixed-in-v035); earlier fixes: [v0.3.4](#fixed-in-v034) / [v0.3.3](#fixed-in-v033) / [v0.3.2](#fixed-in-v032) / [v0.3.1](#fixed-in-v031))
 
 ---
 
@@ -47,6 +47,7 @@
 - [Running Tests](#running-tests)
 - [Size Design Notes](#size-design-notes)
 - [API Keys & Credentials](#api-keys--credentials)
+- [Fixed in v0.3.5](#fixed-in-v035)
 - [Fixed in v0.3.4](#fixed-in-v034)
 - [Fixed in v0.3.3](#fixed-in-v033)
 - [Fixed in v0.3.2](#fixed-in-v032)
@@ -69,7 +70,7 @@
 | 📊 **Usage Statistics** | Time dimension (10 minutes to half a year, or custom range) and conversation dimension (last N sessions); atomic JSON persistence, 10000-record in-memory cap |
 | 🔄 **Automatic Retry** | Exponential backoff retry (up to 3 attempts) for 429, 5xx, and network errors; upstream errors mapped uniformly |
 | 🔒 **Security** | Optional gateway auth (Bearer Token), per-IP sliding-window rate limiting, CORS allowed, keys support environment variable injection, SSRF-guarded page fetching |
-| ⚡ **Extremely Lightweight** | Single 1.95 MB binary (UPX-compressed), zero runtime dependencies; hand-written HTTP layer and YAML subset parser |
+| ⚡ **Extremely Lightweight** | Single 6.18 MB binary (stripped), zero runtime dependencies; hand-written HTTP layer and YAML subset parser |
 | 🔑 **Key Management** (v0.3.1) | Fill in provider keys from the GUI 🔑 panel, the CLI `/key` command, or `GET/POST /v1/keys`; writes go to `keys.yaml` and are hot-reloaded, deleting it reverts to plugin config |
 
 ---
@@ -78,7 +79,7 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-Setup-0.3.4.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
+Download `General-Harness-Setup-0.3.5.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
 
 - `DefaultDirName={autopf}\General Harness` combined with `PrivilegesRequired=lowest` means the default install target is **the current user's program directory**, not a machine-wide one;
 - The installer bundles everything needed (engine binary, config, GUI, sample models);
@@ -111,7 +112,7 @@ stop.bat               :: One-click stop the engine
 
 Script features:
 
-- `start.bat` and `restart.bat` prefer `bin\gh_upx.exe` and fall back to `bin\gh.exe`;
+- `start.bat` and `restart.bat` prefer `bin\gh.exe` and fall back to `bin\gh.exe`;
 - Probes port health before starting: reuses an already-running engine instead of starting a duplicate;
 - Restart/stop kills the process via `gateway.pid` first, with a `netstat` port-based fallback;
 - Waits for the engine to be ready (polling `/health`, up to 30 seconds) before launching the frontend;
@@ -131,13 +132,13 @@ python start.py --server
 ```
 
 > The engine listens on `http://127.0.0.1:8000` by default; override with `--port <port>`.
-> Don't want to use Python? Run `bin\gh_upx.exe serve` directly (zero dependencies).
+> Don't want to use Python? Run `bin\gh.exe serve` directly (zero dependencies).
 
 ### Minimal Verification
 
 ```bash
 # 1) Start the engine
-bin\gh_upx.exe serve --port 8000
+bin\gh.exe serve --port 8000
 
 # 2) Verify health check in another terminal
 curl http://127.0.0.1:8000/health
@@ -145,7 +146,7 @@ curl http://127.0.0.1:8000/health
 
 # 3) Identify the service and its version
 curl http://127.0.0.1:8000/
-# → {"service":"General Harness","ui":"/ui","version":"0.3.4"}
+# → {"service":"General Harness","ui":"/ui","version":"0.3.5"}
 
 # 4) List models (includes the bundled local GGUF sample)
 curl http://127.0.0.1:8000/v1/models
@@ -160,8 +161,8 @@ curl http://127.0.0.1:8000/v1/models
 | `python start.py` | CLI | Auto-starts the engine and enters terminal chat; engine shuts down after Ctrl+C |
 | `python start.py --gui` | GUI | Auto-starts the engine and opens a native Webview window |
 | `python start.py --server` | Server | Starts only the engine HTTP API, stays in the background |
-| `bin\gh_upx.exe serve` | Server | Same as above, no Python needed |
-| `bin\gh_upx.exe` (no args) | CLI | Enters terminal mode directly (engine embedded, no separate server) |
+| `bin\gh.exe serve` | Server | Same as above, no Python needed |
+| `bin\gh.exe` (no args) | CLI | Enters terminal mode directly (engine embedded, no separate server) |
 
 `start.py` first probes `http://127.0.0.1:<port>/health`: it reuses an already-running engine, otherwise starts one; it cleans up the engine process on exit.
 
@@ -169,7 +170,7 @@ curl http://127.0.0.1:8000/v1/models
 
 ## Terminal CLI Mode
 
-The engine has a built-in terminal interactive mode (`gh chat` or run `bin\gh_upx.exe` directly):
+The engine has a built-in terminal interactive mode (`gh chat` or run `bin\gh.exe` directly):
 
 ```
 ═══ General Harness CLI ═══
@@ -210,7 +211,7 @@ The prompt shows the current model and the web-search switch. `reasoning_content
 
 `/search on` is refused when `search.enabled=false`. The first time it turns on, it prints the privacy notice: what is sent to the search service is the locally extracted query terms (or the `rewrite_model`-generated terms), never the raw question.
 
-### Engine Subcommands (`bin\gh_upx.exe <subcommand>`)
+### Engine Subcommands (`bin\gh.exe <subcommand>`)
 
 | Subcommand | Description |
 | --- | --- |
@@ -567,7 +568,7 @@ Groups by session (ordered by last activity, newest first) and sums the tokens o
 
 ### Root Endpoint
 
-`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.4"}` (not rate-limited)
+`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.5"}` (not rate-limited)
 
 `GET /ui` → the built-in browser UI (HTML, 13,307 bytes embedded via `go:embed`; not rate-limited).
 It matches the desktop GUI feature-for-feature and needs no Python.
@@ -708,8 +709,7 @@ models:
 General_Harness_Release/
 ├── .gitignore               # Ignores __pycache__, *.pyc, gateway.pid, usage_stats.json, logs, gh-engine.exe, release_assets
 ├── bin/
-│   ├── gh_upx.exe           # Engine (UPX-compressed, 2,056,704 bytes, recommended)
-│   └── gh.exe               # Engine (stripped, 6,433,280 bytes)
+│   └── gh.exe               # Engine (stripped, 6,482,432 bytes)
 ├── engine/                  # Go engine source (zero third-party deps)
 │   ├── main.go              # Entry point & subcommand dispatch
 │   ├── server.go            # HTTP routing & all handlers
@@ -758,8 +758,8 @@ General_Harness_Release/
 ├── config.yaml              # Global config (server / agent / search / plugins)
 ├── installer.iss            # Inno Setup 6 script (desktop shortcut created by default since v0.3.1)
 ├── start.py                 # Unified launcher (always uses bin/gh.exe)
-├── start.bat                # One-click start script (prefers gh_upx.exe)
-├── restart.bat              # One-click restart script (prefers gh_upx.exe)
+├── start.bat                # One-click start script (prefers gh.exe)
+├── restart.bat              # One-click restart script (prefers gh.exe)
 ├── stop.bat                 # One-click stop script
 ├── tests/test_gui.py        # GUI / proxy tests
 ├── installer.iss            # Inno Setup 6 packaging script (the only packaging script)
@@ -780,7 +780,7 @@ cd engine
 go build -ldflags "-s -w -buildid=" -trimpath -o ../bin/gh.exe .
 
 # Optional: UPX extreme compression (~3x smaller; requires UPX)
-upx --lzma -9 -o ../bin/gh_upx.exe ../bin/gh.exe
+upx --lzma -9 -o ../bin/gh.exe ../bin/gh.exe
 ```
 
 The engine source has zero third-party dependencies (pure standard library): a hand-written HTTP/1.1 server (`http.go`), a hand-written HTTP client with TLS, redirect, chunked and gzip support (`cloud.go`), and a hand-written YAML subset parser (`yaml.go`); JSON handling also uses the standard library. The installer package is produced separately with Inno Setup (`ISCC.exe installer.iss`); there is no ZIP packaging script.
@@ -809,11 +809,10 @@ What is actually covered: YAML parsing, GGUF parsing (including invalid magic), 
 
 | Build | Size (measured) |
 | --- | --- |
-| Engine stripped (`-s -w -buildid=` + trimpath) — `bin/gh.exe` | 6,433,280 bytes (≈ 6.10 MB) |
-| Engine UPX-compressed (`--lzma -9`) — `bin/gh_upx.exe` | 2,056,704 bytes (≈ 1.95 MB) |
+| Engine stripped (`-s -w -buildid=` + trimpath) — `bin/gh.exe` | 6,482,432 bytes (≈ 6.18 MB) |
 | GUI frontend | Single embedded file, no external assets (`INDEX_HTML`, 14,324 characters / 15,317 bytes) |
 
-Design approach: hand-written HTTP layer using only the `net` package (avoiding the ~4 MB `net/http` standard library) + zero third-party dependencies + UPX compression. On Windows, the physical floor for a network-capable Go binary is about 0.72 MB (pure `net` package + UPX extreme); the UPX build here is about 1.95 MB, which remains comfortably lightweight. The engine is a single file with zero runtime dependencies — extract and run.
+Design approach: hand-written HTTP layer using only the `net` package (avoiding the ~4 MB `net/http` standard library) + zero third-party dependencies + UPX compression. On Windows, the physical floor for a network-capable Go binary is about 0.72 MB (pure `net` package + UPX extreme); the UPX build here is about 6.18 MB, which remains comfortably lightweight. The engine is a single file with zero runtime dependencies — extract and run.
 
 ---
 
@@ -868,6 +867,24 @@ An unknown `provider` returns 404; empty `provider`/`key` returns 400.
 - Security: `/v1/keys` only accepts **loopback** callers (403 otherwise) and is exempt from `gateway_api_key` - it is the credential bootstrap endpoint. Never expose the engine to the public internet.
 
 > `keys.yaml` stores keys in **plaintext** (same as `plugins/*/config.yaml`). It is more convenient than environment variables but should not be shared; use `${ENV_VAR}` when you need stronger separation.
+
+---
+
+## Fixed in v0.3.5
+
+> Why: the v0.3.4 GUI was read-only — you could not select or copy an answer, you could not
+> delete a single turn out of a long conversation, and an unsatisfying answer forced you to
+> retype the whole question.
+
+| Problem | Fix |
+| --- | --- |
+| Answer text could not be selected or copied (`pywebview`'s `text_select` defaults to off, so WebView2 injects `user-select:none`) | `create_window` in `gui/gui.py` now passes `text_select=True`; every bubble also gets a 📋 Copy button (falls back to a hidden `textarea` + `execCommand` when `navigator.clipboard` is unavailable) |
+| No way to delete one specific turn — only a full "clear" | Each turn carries a 🗑 Delete button; the request context is rebuilt by `buildHistory()` from `turns`, so the conversation still lines up after a deletion |
+| Regenerating meant retyping the question, with the old answer still in context | Assistant bubbles get 🔄 Regenerate: drop this turn and everything after it, then resend the same question (matches mainstream chat apps; no parallel branches) |
+| UI state could drift from the request context | The front end now keeps a single source of truth, `turns` (`{q, a, qEl, aEl}`); `messages` is computed at send time |
+| The UPX-compressed engine in the installer tripped Windows Defender (`Trojan:Win32/Wacatac.B!ml`) and was quarantined on extraction | Releases no longer ship `bin/gh_upx.exe`, only the uncompressed `bin/gh.exe` (6,482,432 bytes). Scripts now prefer `gh.exe` and fall back to `gh_upx.exe` for old install directories. lzma2 / DEFLATE compress the plain Go binary better, so the installer *shrank* from 5,067,208 to **4,342,864 bytes** and the ZIP from 5,075,965 to **3,010,339 bytes** |
+
+> Note: `turns` lives in memory only and is cleared on page reload — same as v0.3.4 (no local session persistence).
 
 ---
 
@@ -958,8 +975,8 @@ renders as SVG in Python.
 
 Yes. The engine is a standalone single-file binary:
 
-- `bin\gh_upx.exe serve` — starts the HTTP service;
-- Run `bin\gh_upx.exe` directly — enters the terminal CLI.
+- `bin\gh.exe serve` — starts the HTTP service;
+- Run `bin\gh.exe` directly — enters the terminal CLI.
 
 Python is only used in two places: the `start.py` launcher and the Webview GUI mode.
 </details>
@@ -977,7 +994,7 @@ Just pick a new port:
 
 ```bash
 python start.py --port 9000                 # via the launcher
-bin\gh_upx.exe serve --port 9000            # start the engine directly
+bin\gh.exe serve --port 9000            # start the engine directly
 python gui/gui.py --url http://127.0.0.1:9000   # point the GUI at the new port
 ```
 
@@ -1030,10 +1047,9 @@ Yes. `config.yaml`, `plugins/*/config.yaml`, and `models/*.gguf` are loaded or s
 <details>
 <summary><b>Why are there two gh.exe files?</b></summary>
 
-- `gh_upx.exe`: UPX-compressed (2,056,704 bytes ≈ 1.95 MB), smaller, decompresses to memory at runtime;
-- `gh.exe`: regular stripped build (6,433,280 bytes ≈ 6.10 MB), slightly faster startup.
+The repo ships a single engine binary `bin/gh.exe` (stripped, 6,482,432 bytes ≈ 6.18 MB).
 
-They are functionally identical; use `gh_upx.exe` day-to-day. `start.bat`/`restart.bat` prefer it and fall back to `gh.exe`; `start.py` always uses `bin\gh.exe` and has no fallback.
+> Earlier releases also shipped a UPX-compressed `bin/gh_upx.exe` (~2 MB). Since v0.3.5 it is gone: the UPX + Go combination trips Windows Defender's ML heuristic (`Trojan:Win32/Wacatac.B!ml`, 5 detections observed), so users got a quarantined file right after extraction.
 </details>
 
 ### 🔌 Integration
@@ -1124,12 +1140,12 @@ Usually a port conflict or a config error:
 
 ## Known Limitations
 
-- **Windows only**: the repo ships only Windows engine binaries (`bin/gh.exe` / `bin/gh_upx.exe`); macOS/Linux users must build from source (`cd engine && go build`).
+- **Windows only**: the repo ships only the Windows engine binary (`bin/gh.exe`); macOS/Linux users must build from source (`cd engine && go build`).
 - **Never commit real API keys**: in `plugins/*/config.yaml`, prefer `${ENV_VAR}` notation; ensure real keys are not committed to version control.
 - **YAML subset parser**: the hand-written YAML parser does not support flow style (`[]`/`{}`) or multi-line strings — only the shapes this project's config requires.
 - **Binaries in repo**: `bin/` and `models/*.gguf` are committed for out-of-box use; use GitHub Releases to slim the repo if needed.
 - **CLI thinking display is text-only**: `reasoning_content` is folded into a single `💭 思考中… N 字` line and expanded with `/think on` in dim grey — there is no syntax coloring inside the thinking text, and under stdout redirection only a one-line summary is printed.
-- **Launcher port handling is inconsistent**: `start.py` reads `server.port` (via PyYAML, silently falling back to 8000 when PyYAML is missing), while `start.bat` / `restart.bat` / `stop.bat` hard-code port 8000 and ignore `server.port`. `start.py` always uses `bin\gh.exe` (no `gh_upx.exe` preference and no fallback); `start.bat` never calls `start.py`.
+- **Launcher port handling is inconsistent**: `start.py` reads `server.port` (via PyYAML, silently falling back to 8000 when PyYAML is missing), while `start.bat` / `restart.bat` / `stop.bat` hard-code port 8000 and ignore `server.port`. `start.py` always uses `bin\gh.exe` (no `gh.exe` preference and no fallback); `start.bat` never calls `start.py`.
 - **Usage records are bounded and batched**: at most 10000 records are kept in memory (oldest silently dropped) and flushed every 50 entries, so a hard kill can lose up to 49 recent records.
 - **No portable packaging**: `installer.iss` (Inno Setup) is the only packaging script; the desktop shortcut is created by default since v0.3.1 (previously unchecked by default and `PrivilegesRequired=lowest` means the default install goes to the current user's program directory.
 

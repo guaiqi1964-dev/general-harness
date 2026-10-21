@@ -101,6 +101,27 @@ func TestBuiltinUIPage(t *testing.T) {
 			t.Fatalf("内置页面缺少密钥面板要素 %q", want)
 		}
 	}
+	// v0.3.5：复制、删除单轮、重新生成。
+	// 这些按钮由 renderBubble 动态重建，必须有 actionsHtml 与事件委托把它们接回 turns。
+	for _, want := range []string{
+		"function buildHistory",
+		"function actionsHtml",
+		"function copyText",
+		"function removeTurn",
+		"function regenerate",
+		`data-act="copy"`,
+		`data-act="del"`,
+		`data-act="regen"`,
+		"btn.closest('.msg.user')",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("内置页面缺少 v0.3.5 对话操作要素 %q", want)
+		}
+	}
+	// 不能再用一份独立的 history 数组：删除/重新生成后它会与界面不一致。
+	if strings.Contains(body, "history.concat") {
+		t.Fatal("内置页面仍在用 history.concat，删除与重新生成会导致上下文与界面不一致")
+	}
 
 	// 非 GET 方法应拒绝。
 	if st, _, _ := httpRaw(t, addr, "POST", "/ui"); st != 405 {

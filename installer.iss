@@ -2,8 +2,8 @@
 ; Build: ISCC.exe installer.iss
 
 #define MyAppName "General Harness"
-#define MyAppVersion "0.3.4"
-#define MyAppFileVersion "0.3.4.0"
+#define MyAppVersion "0.3.5"
+#define MyAppFileVersion "0.3.5.0"
 #define MyAppPublisher "GQ's Lab"
 #define MyAppExeName "start.bat"
 #define MyAppId "{{8F3B1A2C-5D4E-4A6B-9C7D-1E2F3A4B5C6D}"
@@ -43,7 +43,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create desktop shortcut"; GroupDescription: "Additional tasks:"
 
 [Files]
-Source: "bin\gh_upx.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+; 发行件只带未压缩的 gh.exe：UPX 压缩版会被 Windows Defender 误判为
+; Trojan:Win32/Wacatac.B!ml（机器学习启发式对 UPX+Go 的典型误报），
+; 用户解压即被隔离，得不偿失。
 Source: "bin\gh.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "config.yaml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start.py"; DestDir: "{app}"; Flags: ignoreversion

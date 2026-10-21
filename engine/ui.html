@@ -59,6 +59,13 @@ a.src:hover { border-color:var(--accent); }
 a.src .idx { color:var(--accent); }
 a.src .title { flex:1; word-break:break-word; }
 a.src .host { color:var(--muted); font-size:12px; white-space:nowrap; }
+.msg { position:relative; }
+.msg-actions { display:flex; gap:6px; margin-top:8px; opacity:.35; transition:opacity .15s; }
+.msg:hover .msg-actions, .msg-actions:focus-within { opacity:1; }
+.msg-actions button { padding:2px 8px; font-size:12px; background:transparent;
+        color:var(--muted); border-color:transparent; }
+.msg-actions button:hover { color:var(--fg); border-color:var(--accent); }
+.msg.failed .body { color:#e0a0a0; }
 </style>
 </head>
 <body>
@@ -97,7 +104,10 @@ const statusEl = $('#status'), sendBtn = $('#send');
 const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody'), gwkeyInput = $('#gwkey');
 const webBtn = $('#web');
 const keysBtn = $('#keys'), keysPanel = $('#keysPanel'), keysList = $('#keysList');
-let history = [];
+// 对话按「轮」保存：每轮 {id, q, a, think, sources, qEl, aEl}。
+// 发送给接口的 messages 由 buildHistory() 现场展开，删除/重新生成后上下文自动一致。
+let turns = [];
+let turnSeq = 0;
 let deepThinking = false;
 let webSearch = localStorage.getItem('websearch') === '1';
 let webNoticeShown = localStorage.getItem('websearchNotice') === '1';
@@ -198,14 +208,26 @@ function toggleKeys() {
   keysBtn.classList.toggle('active', open);
   if (open) loadKeys();
 }
-function addMsg(role, text, thinking) {
+function buildHistory() {
+  const out = [];
+  for (const t of turns) {
+    out.push({role:'user', content:t.q});
+    if (t.a) out.push({role:'assistant', content:t.a});
+  }
+  return out;
+}
+function actionsHtml(turn, role) {
+  const id = turn ? turn.id : '';
+  let h = '<div class="msg-actions">';
+  h += '<button type="button" data-act="copy" data-turn="'+escAttr(id)+'">📋 复制</button>';
+  if (role === 'assistant') h += '<button type="button" data-act="regen" data-turn="'+escAttr(id)+'">🔄 重新生成</button>';
+  h += '<button type="button" data-act="del" data-turn="'+escAttr(id)+'">🗑 删除</button>';
+  return h + '</div>';
+}
+function addMsg(role, text, turn) {
   const div = document.createElement('div');
   div.className = 'msg ' + role;
-  if (thinking) {
-    div.innerHTML = '<details class="think" open><summary>💭 思考过程</summary><div>'+esc(thinking)+'</div></details><div>'+esc(text)+'</div>';
-  } else {
-    div.textContent = text;
-  }
+  div.innerHTML = '<div class="body">'+esc(text)+'</div>' + actionsHtml(turn, role);
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
   return div;
@@ -229,12 +251,45 @@ function sourcesHtml(list) {
   if (!items) return '';
   return '<div class="sources"><div class="src-head">🌐 来源（点击在新窗口打开）</div>'+items+'</div>';
 }
-function renderBubble(bubble, full, think, sources) {
+function renderBubble(bubble, full, think, sources, turn, role) {
   let html = '';
   if (think) html += '<details class="think" open><summary>💭 思考过程</summary><div>'+esc(think)+'</div></details>';
-  html += '<div>'+esc(full)+'</div>';
+  html += '<div class="body">'+esc(full)+'</div>';
   html += sourcesHtml(sources);
+  html += actionsHtml(turn, role || 'assistant');
   bubble.innerHTML = html;
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch(e) {}
+  // 兜底：非安全上下文或权限被拒时用隐藏 textarea + execCommand
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.setAttribute('readonly','');
+  ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch(e) {}
+  ta.remove();
+  return ok;
+}
+function removeTurn(turn) {
+  const i = turns.indexOf(turn);
+  if (i < 0) return;
+  if (turn.qEl) turn.qEl.remove();
+  if (turn.aEl) turn.aEl.remove();
+  turns.splice(i, 1);
+}
+async function regenerate(turn) {
+  if (sendBtn.disabled) return;
+  const i = turns.indexOf(turn);
+  if (i < 0) return;
+  const q = turn.q;
+  // 重新生成会丢弃这一轮及其后所有轮次，再从同一个问题重发。
+  for (let k = turns.length - 1; k >= i; k--) {
+    if (turns[k].qEl) turns[k].qEl.remove();
+    if (turns[k].aEl) turns[k].aEl.remove();
+  }
+  turns.length = i;
+  await send(q);
 }
 async function toggleWeb() {
   if (webSearch) {
@@ -260,14 +315,18 @@ async function toggleWeb() {
   }
 }
 
-async function send() {
-  const text = input.value.trim();
+async function send(reuseText) {
+  const text = (typeof reuseText === 'string' ? reuseText : input.value).trim();
   if (!text || sendBtn.disabled) return;
-  input.value = ''; setBusy(true); statusEl.textContent = webSearch ? '正在检索…' : '生成中…';
-  addMsg('user', text);
-  const bubble = addMsg('assistant', '');
+  if (typeof reuseText !== 'string') input.value = '';
+  setBusy(true);
+  statusEl.textContent = webSearch ? '正在检索…' : '生成中…';
+  const turn = {id:'t' + (++turnSeq), q:text, a:'', think:'', sources:[]};
+  turn.qEl = addMsg('user', text, turn);
+  turn.aEl = addMsg('assistant', '', turn);
+  turns.push(turn);
   try {
-    const payload = {model: modelSel.value, messages: history.concat([{role:'user',content:text}]), stream: true, stream_options: {include_usage: true}, session_id: sessionId};
+    const payload = {model: modelSel.value, messages: buildHistory().concat([{role:'user',content:text}]), stream: true, stream_options: {include_usage: true}, session_id: sessionId};
     // 未开启联网时请求体与旧版本逐字段一致（G2）。
     if (webSearch) payload.web_search = true;
     const r = await fetch('/v1/chat/completions', {
@@ -279,7 +338,7 @@ async function send() {
     const reader = r.body.getReader();
     const dec = new TextDecoder();
     let buf = '', full = '', think = '', sources = null;
-    bubble.textContent = '';
+    turn.aEl.innerHTML = actionsHtml(turn, 'assistant');
     while (true) {
       const {done, value} = await reader.read();
       if (done) break;
@@ -296,7 +355,7 @@ async function send() {
         if (ev.phase === 'search') {
           sources = ev.sources || [];
           statusEl.textContent = '已检索到 ' + sources.length + ' 条来源，生成中…';
-          renderBubble(bubble, full, think, sources);
+          renderBubble(turn.aEl, full, think, sources, turn, 'assistant');
           chat.scrollTop = chat.scrollHeight;
           continue;
         }
@@ -307,22 +366,47 @@ async function send() {
         }
         if (ev.content) { full += ev.content; }
         if (ev.content || think) {
-          renderBubble(bubble, full, think, sources);
+          renderBubble(turn.aEl, full, think, sources, turn, 'assistant');
           chat.scrollTop = chat.scrollHeight;
         }
       }
     }
-    renderBubble(bubble, full, think, sources);
-    history = history.concat([{role:'user',content:text},{role:'assistant',content:full}]);
+    renderBubble(turn.aEl, full, think, sources, turn, 'assistant');
+    turn.a = full; turn.think = think; turn.sources = sources || [];
     statusEl.textContent = '完成';
   } catch(e) {
-    bubble.textContent = '✗ ' + e.message;
+    turn.failed = true;
+    turn.aEl.classList.add('failed');
+    renderBubble(turn.aEl, '✗ ' + e.message, '', null, turn, 'assistant');
     statusEl.textContent = '错误';
   }
   setBusy(false);
 }
+// 气泡里的按钮用事件委托，renderBubble 重写 innerHTML 也不会丢绑定。
+chat.addEventListener('click', async e => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const turn = turns.find(t => t.id === btn.dataset.turn);
+  if (!turn) return;
+  const act = btn.dataset.act;
+  if (act === 'copy') {
+    const isUser = btn.closest('.msg.user');
+    const text = isUser ? turn.q : turn.a;
+    if (!text) { statusEl.textContent = '这条还没有内容可复制'; return; }
+    const ok = await copyText(text);
+    statusEl.textContent = ok ? '已复制到剪贴板' : '复制失败，请手动选中文本';
+  } else if (act === 'del') {
+    if (sendBtn.disabled) { statusEl.textContent = '生成中，请等待或先中断'; return; }
+    removeTurn(turn);
+    statusEl.textContent = '已删除 1 轮对话';
+  } else if (act === 'regen') {
+    if (sendBtn.disabled) { statusEl.textContent = '生成中，请稍候'; return; }
+    statusEl.textContent = '重新生成中…';
+    await regenerate(turn);
+  }
+});
 $('#send').onclick = send;
-$('#clear').onclick = () => { history = []; chat.innerHTML = ''; sessionId = 'sess-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); };
+$('#clear').onclick = () => { turns = []; chat.innerHTML = ''; sessionId = 'sess-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); statusEl.textContent = '已清空对话'; };
 $('#refresh').onclick = loadModels;
 $('#deep').onclick = toggleDeep;
 $('#web').onclick = toggleWeb;
