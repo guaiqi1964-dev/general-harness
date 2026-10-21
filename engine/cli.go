@@ -1,6 +1,6 @@
-// 终端 CLI 模式：模型切换、检索、用量、密钥管理全在终端里完成。
+// 终端 CLI 模式：把桌面 GUI 的能力搬进终端。
 //
-// 能力：多轮对话、流式输出、思考过程折叠、
+// 能做的与 GUI 基本对等：模型切换、多轮对话、流式输出、思考过程折叠、
 // 联网检索开关与来源、用量统计、密钥管理、配置查看、中断当前生成。
 // 区别只在于交互形式（文本命令 vs 按钮）。
 //
@@ -207,7 +207,7 @@ func (s *cliSession) bye() {
 	s.println(s.paint(ansiDim, "再见！"))
 }
 
-// prompt 提示符带当前模型与联网状态，一眼可见当前状态。
+// prompt 提示符带当前模型与联网状态，等于 GUI 顶部的状态区。
 func (s *cliSession) prompt() string {
 	web := "关"
 	if s.webSearch {
@@ -263,6 +263,8 @@ func (s *cliSession) handleCommand(text string) (bool, bool) {
 		s.cmdConfig()
 	case "/history":
 		s.cmdHistory()
+	case "/regen", "/retry":
+		s.cmdRegen()
 	case "/clear":
 		s.history = nil
 		s.dim("历史已清空")
@@ -288,6 +290,7 @@ func splitCommand(text string) (string, string) {
 func (s *cliSession) cmdHelp() {
 	s.println(s.paint(ansiBold, "对话"))
 	s.dim("  <文本>            发送消息（\\ 结尾可续行）")
+	s.dim("  /regen            重新生成上一条回答（丢弃该回答及其后的轮次）")
 	s.dim("  /clear            清空对话历史")
 	s.dim("  /cls              清屏")
 	s.dim("  /history          查看本次会话轮数")
@@ -311,7 +314,7 @@ func (s *cliSession) cmdHelp() {
 	s.dim("  /exit             退出（Ctrl+C 在生成时只中断当前请求）")
 }
 
-// cmdModels 列出模型，带序号、当前标记与视觉能力。
+// cmdModels 列出模型，带序号、当前标记与视觉能力，等价 GUI 的模型下拉。
 func (s *cliSession) cmdModels() {
 	list := s.engine.Cloud.modelList()
 	s.println(s.paint(ansiBold, "云端模型"))
@@ -533,15 +536,15 @@ func (s *cliSession) cmdWeb(query string) {
 	}
 }
 
-// cmdKey 查看 / 设置 / 清除厂商 Key，改完立即生效，不必手改 YAML。
+// cmdKey 查看 / 设置 / 清除厂商 Key，等价 GUI 的 🔑 面板。
 func (s *cliSession) cmdKey(arg string) {
 	parts := strings.Fields(arg)
-	if len(parts) == 0 || (len(parts) == 1 && (parts[0] == "list" || parts[0] == "help")) {
+	if len(parts) == 0 {
 		s.listKeys()
 		return
 	}
 	if len(parts) != 2 {
-		s.fail("用法: /key <清单|厂商 密钥|厂商 ->，例如 /key deepseek sk-xxx、/key deepseek -")
+		s.fail("用法: /key <厂商> <密钥|-清除>")
 		return
 	}
 	provider, key := parts[0], parts[1]
@@ -602,7 +605,7 @@ func (s *cliSession) listKeys() {
 	s.dim("设置: /key <厂商> <密钥> · 清除: /key <厂商> - · 文件: %s", s.engine.KeysPath)
 }
 
-// cmdUsage 用量统计，按时间桶聚合。
+// cmdUsage 用量统计，等价 GUI 的 📊 面板。
 func (s *cliSession) cmdUsage(arg string) {
 	mode := strings.ToLower(strings.TrimSpace(arg))
 	if mode == "conv" || mode == "conversations" || mode == "session" {
@@ -670,7 +673,7 @@ func (s *cliSession) printConversations() {
 	}
 }
 
-// usageBar 用方块画条形图，一眼看出量级。
+// usageBar 用方块画条形图，与 GUI 的柱状图等价。
 func usageBar(v, peak int64, width int) string {
 	if peak <= 0 || width <= 0 {
 		return ""
@@ -697,7 +700,7 @@ func padLeft(s string, width int) string {
 	return strings.Repeat(" ", width-len(s)) + s
 }
 
-// cmdConfig 打印当前生效配置（排障最常用的那部分）。
+// cmdConfig 打印当前生效配置（等价 GUI 里看不到但排障最常用的那部分）。
 func (s *cliSession) cmdConfig() {
 	cfg := s.engine.Config
 	s.println(s.paint(ansiBold, "服务"))
@@ -777,6 +780,31 @@ func (s *cliSession) cmdHistory() {
 }
 
 // chat 发送一条消息并流式接收回复。
+// cmdRegen 重新生成上一条回答：丢弃最后一轮问答，用同一个问题重发。
+// 与 GUI 的「🔄 重新生成」等价——覆盖式，不做多分支翻页。
+func (s *cliSession) cmdRegen() {
+	if atomic.LoadInt32(&s.streaming) == 1 {
+		s.fail("正在生成中，等这次结束再试")
+		return
+	}
+	lastUser := -1
+	for i := len(s.history) - 1; i >= 0; i-- {
+		if toStr(s.history[i]["role"]) == "user" {
+			lastUser = i
+			break
+		}
+	}
+	if lastUser < 0 {
+		s.fail("没有可重新生成的提问（对话为空）")
+		return
+	}
+	question := toStr(s.history[lastUser]["content"])
+	dropped := len(s.history) - lastUser
+	s.history = s.history[:lastUser]
+	s.dim("↻ 重新生成：%s（丢弃 %d 条消息）", truncateRunes(strings.ReplaceAll(question, "\n", " "), 40), dropped)
+	s.chat(question)
+}
+
 func (s *cliSession) chat(text string) {
 	s.history = append(s.history, map[string]any{"role": "user", "content": text})
 	s.printf("%s ", s.paint(ansiBold, "助手 ›"))
@@ -793,7 +821,7 @@ func (s *cliSession) chat(text string) {
 	s.println()
 }
 
-// printSources 打印编号来源，与响应里的 sources 一一对应。
+// printSources 打印编号来源（等价 GUI 的来源卡片）。
 func (s *cliSession) printSources(sources []map[string]any) {
 	s.println(s.paint(ansiBold, "来源"))
 	for _, src := range sources {
@@ -804,7 +832,7 @@ func (s *cliSession) printSources(sources []map[string]any) {
 }
 
 // streamReply 流式生成，返回（正文, 来源）。
-// 渲染顺序：检索状态行 → 思考折叠（或展开）→ 正文 → 收尾统计。
+// 渲染策略与 GUI 对齐：检索状态行 → 思考折叠（或展开）→ 正文 → 收尾统计。
 func (s *cliSession) streamReply(messages []map[string]any) (string, []map[string]any) {
 	// 本地 GGUF 模型只输出固定摘要（与 HTTP 路径一致）。
 	if r := s.engine.GGUF.get(localName(s.model)); r != nil {

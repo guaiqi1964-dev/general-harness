@@ -507,3 +507,73 @@ func TestCLIKeysFileIsUnderEngineRoot(t *testing.T) {
 		t.Errorf("KeysPath 不合理: %q", s.engine.KeysPath)
 	}
 }
+
+// 重新生成：丢弃最后一轮问答、用同一个问题重发，上下文里只留一份提问。
+func TestCLIRegenReplacesLastAnswer(t *testing.T) {
+	s, _ := newTestCLI(t)
+	s.model = "fake/fake-model"
+	stubStream(s.engine.Cloud.Providers["fake"], []map[string]any{
+		{"content": "第一版回答"},
+	})
+	s.chat("你好")
+	if len(s.history) != 2 {
+		t.Fatalf("首轮后 history 长度 = %d，期望 2", len(s.history))
+	}
+
+	stubStream(s.engine.Cloud.Providers["fake"], []map[string]any{
+		{"content": "重写后的回答"},
+	})
+	handled, quit := s.handleCommand("/regen")
+	if !handled || quit {
+		t.Fatalf("handleCommand(/regen) = (%v, %v)", handled, quit)
+	}
+	if len(s.history) != 2 {
+		t.Fatalf("重新生成后 history 长度 = %d，期望 2（旧回答应被替换）", len(s.history))
+	}
+	if q := toStr(s.history[0]["content"]); q != "你好" {
+		t.Errorf("提问 = %q，期望原问题", q)
+	}
+	if a := toStr(s.history[1]["content"]); a != "重写后的回答" {
+		t.Errorf("回答 = %q，期望被替换", a)
+	}
+}
+
+// 上下文里有两轮问答时，重新生成只丢最后一轮，前面保留。
+func TestCLIRegenKeepsEarlierTurns(t *testing.T) {
+	s, _ := newTestCLI(t)
+	s.model = "fake/fake-model"
+	stubStream(s.engine.Cloud.Providers["fake"], []map[string]any{{"content": "A1"}})
+	s.chat("Q1")
+	stubStream(s.engine.Cloud.Providers["fake"], []map[string]any{{"content": "A2"}})
+	s.chat("Q2")
+	if len(s.history) != 4 {
+		t.Fatalf("两轮后 history 长度 = %d，期望 4", len(s.history))
+	}
+
+	stubStream(s.engine.Cloud.Providers["fake"], []map[string]any{{"content": "A2-新"}})
+	s.cmdRegen()
+	if len(s.history) != 4 {
+		t.Fatalf("重新生成后 history 长度 = %d，期望 4", len(s.history))
+	}
+	if toStr(s.history[0]["content"]) != "Q1" || toStr(s.history[1]["content"]) != "A1" {
+		t.Errorf("第一轮被误删: %v", s.history[:2])
+	}
+	if toStr(s.history[3]["content"]) != "A2-新" {
+		t.Errorf("最后一轮未被替换: %q", toStr(s.history[3]["content"]))
+	}
+}
+
+// 空对话时给出明确提示，不抛错、不污染 history。
+func TestCLIRegenOnEmptyHistory(t *testing.T) {
+	s, buf := newTestCLI(t)
+	handled, quit := s.handleCommand("/regen")
+	if !handled || quit {
+		t.Fatalf("handleCommand(/regen) = (%v, %v)", handled, quit)
+	}
+	if len(s.history) != 0 {
+		t.Errorf("空对话时不应写入 history")
+	}
+	if !strings.Contains(buf.String(), "没有可重新生成") {
+		t.Errorf("缺少提示，输出:\n%s", buf.String())
+	}
+}

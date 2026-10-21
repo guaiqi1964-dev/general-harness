@@ -11,7 +11,7 @@
 > 内置 `/ui` 页面、pywebview 依赖与相关测试），只保留引擎与终端交互。
 > 主线（含 GUI）见 [main 分支](https://github.com/guaiqi1964-dev/general-harness)。
 
-- **版本**：v0.3.3-cli（CLI 能力与主线 v0.3.3 等价：思考过程折叠、用量统计、配置查看、密钥管理、后端切换、Ctrl+C 只中断当前生成、管道模式，见 [v0.3.3 修复](#v033-修复)）
+- **版本**：v0.3.4-cli（CLI 能力与主线 v0.3.3 等价：思考过程折叠、用量统计、配置查看、密钥管理、后端切换、Ctrl+C 只中断当前生成、管道模式；v0.3.4-cli 另加 `/regen` 重新生成上一条回答，见 [v0.3.3 修复](#v033-修复)）
 - **引擎**：`bin/gh_upx.exe`（实测 2,065,920 字节 ≈ 2.0 MB）——单文件、零第三方依赖、解压即用，无未压缩副本
 - **引擎源码**：`engine/`——纯 Go 标准库实现（含手写 HTTP 层），无任何外部模块
 
@@ -84,7 +84,7 @@
 
 ### 方式一：Windows 安装包
 
-从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-CLI-Setup-0.3.3.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
+从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-CLI-Setup-0.3.4.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
 
 - 可自选安装目录：脚本中为 `DefaultDirName={autopf}\General Harness CLI`，同时 `PrivilegesRequired=lowest`，因此**无需管理员权限**，实际安装到当前用户的程序目录（约 `%LocalAppData%\Programs\General Harness CLI`），而非全局 `%ProgramFiles%`；
 - 安装包只内置 `bin\gh_upx.exe`、`config.yaml`、三个启动脚本、`start.py`、文档、示例 GGUF 与四个厂商插件配置——**没有任何 Python 依赖**；
@@ -98,7 +98,7 @@
 
 安装包之外，引擎本身是单文件零依赖的：把发行目录整体拷贝到任意位置，双击 `start.bat` 或直接运行 `bin\gh_upx.exe` 即可使用。
 
-> 说明：仓库内**没有**提供绿色包（zip）的打包脚本——`installer.iss` 只产出安装包。自 v0.3.0 起，[Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 会随安装包一并提供发行目录的 zip（如 `General-Harness-CLI-v0.3.3.zip`，与安装包同源）；若自行压缩发行目录，文件名不受本仓库约束。
+> 说明：仓库内**没有**提供绿色包（zip）的打包脚本——`installer.iss` 只产出安装包。自 v0.3.0 起，[Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 会随安装包一并提供发行目录的 zip（如 `General-Harness-CLI-v0.3.4.zip`，与安装包同源）；若自行压缩发行目录，文件名不受本仓库约束。
 
 ### 一键启动脚本
 
@@ -209,6 +209,7 @@ echo "总结这段日志" | gh chat     # 管道模式：stdout 只有正文，�
 | `/usage [1d\|7d\|30d\|all]` | 用量统计，按时间桶画方块条形图（v0.3.3 新增） |
 | `/usage conv` | 最近会话明细：会话 ID / 模型 / tokens（v0.3.3 新增） |
 | `/config` | 查看当前生效配置：监听、限流、鉴权、模型、别名、检索、Agent、文件路径（v0.3.3 新增） |
+| `/regen` | 重新生成上一条回答：丢弃该答案及其后的轮次，用同一个问题重发（v0.3.4-cli 新增） |
 | `/history` | 本次会话轮数与最近几条摘要（v0.3.3 新增） |
 | `/clear` | 清空当前会话历史 |
 | `/cls` | 清屏（保留历史） |
@@ -387,7 +388,7 @@ data: [DONE]
 | 端点 | 响应 | 说明 |
 | --- | --- | --- |
 | `GET /health` | `{"status":"ok"}` | 不受限流与鉴权影响 |
-| `GET /` | `{"service":"General Harness","version":"0.3.3"}` | 服务标识与版本号，不限流 |
+| `GET /` | `{"service":"General Harness","version":"0.3.4"}` | 服务标识与版本号，不限流 |
 
 > v0.2.4 的根路径会额外返回 `"docs":"/docs"`，但引擎**从未实现 `/docs` 路由**（访问实测 404），该误导字段已在 v0.3.0 移除。
 
@@ -1004,7 +1005,7 @@ upx --lzma -9 -o ../bin/gh_upx.exe ../bin/gh.exe
 cd engine && go test ./... -count=1
 ```
 
-实测结果（v0.3.3-cli）：`go test ./... -count=1` → `ok gh-engine 9.434s`，**PASS 99 / FAIL 0 / SKIP 0**。分布为：既有测试 33 个（`engine_test.go` 9、`integration_test.go` 10、`agent_test.go` 8、`ollama_test.go` 2、`cloud_test.go` 2、`streaming_test.go` 2）+ v0.3.0 新增 36 个（`htmltext_test.go` 12、`search_test.go` 11、`search_chat_test.go` 8、`search_api_test.go` 3、`cloud_test.go` 新增 2 个 keep-alive 回归测试）+ v0.3.1/v0.3.2 新增 8 个（`keys_test.go`：覆盖走查、YAML 引号、掩码、`/v1/keys` 写入与热加载、参数校验、非本机访问拒绝、base/override 合并、`keys.yaml` 变更检测）+ v0.3.3 新增 22 个（`cli_test.go`：命令解析、模型切换、思考折叠与展开、Ctrl+C 中断、用量表格与会话列表、密钥设置与清除、后端就绪校验、管道模式、失败不入历史）。
+实测结果（v0.3.4-cli）：`go test ./... -count=1` → `ok gh-engine`，**PASS 102 / FAIL 0 / SKIP 0**。分布为：既有测试 33 个（`engine_test.go` 9、`integration_test.go` 10、`agent_test.go` 8、`ollama_test.go` 2、`cloud_test.go` 2、`streaming_test.go` 2）+ v0.3.0 新增 36 个（`htmltext_test.go` 12、`search_test.go` 11、`search_chat_test.go` 8、`search_api_test.go` 3、`cloud_test.go` 新增 2 个 keep-alive 回归测试）+ v0.3.1/v0.3.2 新增 8 个（`keys_test.go`：覆盖走查、YAML 引号、掩码、`/v1/keys` 写入与热加载、参数校验、非本机访问拒绝、base/override 合并、`keys.yaml` 变更检测）+ v0.3.3 新增 22 个（`cli_test.go`：命令解析、模型切换、思考折叠与展开、Ctrl+C 中断、用量表格与会话列表、密钥设置与清除、后端就绪校验、管道模式、失败不入历史）。
 
 测试覆盖：YAML 子集解析、GGUF 解析（含非法魔数）、用量统计（时间序列 / 对话聚合 / custom 区间 / 持久化）、Key 解析与多 Key 选择、厂商注册、模型路由、限流（含 429）、鉴权、Ollama 兼容端点、流式与非流式记账、SSE 解析、手写 HTTP 客户端的 chunked 解码与 keep-alive+Content-Length 收尾（含“去掉修复即失败”的回归测试）、Agent 白名单/黑名单/超时/输出截断、检索核心（关键词提取、后端调用、缓存、结果排序与 URL 规范化）、`/v1/search` 与 `/v1/search/backends` 状态码、对话侧 `web_search` 注入与失败降级、HTML 正文抽取与 SSRF 地址校验。
 

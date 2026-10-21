@@ -3,11 +3,11 @@ setlocal enabledelayedexpansion
 title General Harness - Start (CLI)
 cd /d "%~dp0"
 
-set "ENGINE=%~dp0bin\gh_upx.exe"
+set "ENGINE=%~dp0bin\gh.exe"
 set PORT=8000
-if not exist "%ENGINE%" set "ENGINE=%~dp0bin\gh.exe"
+if not exist "%ENGINE%" set "ENGINE=%~dp0bin\gh_upx.exe"
 if not exist "%ENGINE%" (
-    echo [ERROR] Engine binary not found: bin\gh_upx.exe / bin\gh.exe
+    echo [ERROR] Engine binary not found: bin\gh.exe
     pause & exit /b 1
 )
 

@@ -5,8 +5,8 @@
     python start.py --server       # 仅启动 Go 引擎（HTTP API 服务）
     python start.py --port 8000    # 指定引擎端口
 
-架构：核心引擎为 Go 单二进制（bin/gh_upx.exe），CLI 内嵌于引擎，
-整个程序不需要 Python 也能运行——`bin\\gh_upx.exe` 双击或直接执行即进入 CLI。
+架构：核心引擎为 Go 单二进制（bin/gh.exe），CLI 内嵌于引擎，
+整个程序不需要 Python 也能运行——`bin\\gh.exe` 双击或直接执行即进入 CLI。
 本启动器只是给"习惯用 python 起服务"的人一个包装，且它是可选的。
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent
 
 def pick_bin() -> Path:
     """优先用 UPX 压缩版（体积最小），缺失时回退未压缩版。"""
-    names = ("gh_upx.exe", "gh.exe") if os.name == "nt" else ("gh_upx", "gh")
+    names = ("gh.exe", "gh_upx.exe") if os.name == "nt" else ("gh", "gh_upx")
     for name in names:
         p = ROOT / "bin" / name
         if p.exists():
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         args.remove("--server")
     if "--gui" in args:
         # 纯 CLI 分支已移除 GUI；这里明确提示而不是静默忽略。
-        print("[发行版] 这个版本不含 GUI（纯 CLI 分支）。直接运行 bin\\gh_upx.exe 或 python start.py 即可进入终端。")
+        print("[发行版] 这个版本不含 GUI（纯 CLI 分支）。直接运行 bin\\gh.exe 或 python start.py 即可进入终端。")
         args.remove("--gui")
     for i, a in enumerate(args):
         if a == "--port" and i + 1 < len(args):

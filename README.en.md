@@ -14,7 +14,7 @@
 > dependency and its tests). Only the engine and the terminal remain.
 > The mainline (with GUI) lives on the [main branch](https://github.com/guaiqi1964-dev/general-harness).
 
-- **Version**: `0.3.3-cli` (CLI capabilities are equivalent to mainline v0.3.3: collapsible thinking, usage stats, live config view, key management, backend switching, Ctrl+C interrupts only the current generation, and pipe mode — see [Fixed in v0.3.3](#fixed-in-v033))
+- **Version**: `0.3.4-cli` (CLI capabilities are equivalent to mainline v0.3.3: collapsible thinking, usage stats, live config view, key management, backend switching, Ctrl+C interrupts only the current generation, and pipe mode — see [Fixed in v0.3.3](#fixed-in-v033))
 - **Engine**: `bin/gh_upx.exe` (2,065,920 bytes ≈ 2.0 MB) — single file, zero third-party dependencies, ready to run after extraction, no uncompressed copy shipped
 - **Engine source**: `engine/` — pure Go standard library (including a hand-written HTTP layer), no external modules
 
@@ -81,7 +81,7 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-CLI-Setup-0.3.3.exe` (built from `installer.iss` with Inno Setup 6) from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
+Download `General-Harness-CLI-Setup-0.3.4.exe` (built from `installer.iss` with Inno Setup 6) from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
 
 - `DefaultDirName={autopf}\General Harness CLI` combined with `PrivilegesRequired=lowest` means **no administrator rights are needed**: the app installs into the current user's program directory (about `%LocalAppData%\Programs\General Harness CLI`) instead of machine-wide `%ProgramFiles%`;
 - The installer bundles `bin\gh_upx.exe`, `config.yaml`, the three launcher scripts, `start.py`, the documentation, the sample GGUF and the four provider plugin configs — with **no Python dependency whatsoever**;
@@ -90,7 +90,7 @@ Download `General-Harness-CLI-Setup-0.3.3.exe` (built from `installer.iss` with 
 
 ### Option 2: Portable ZIP (no installer)
 
-The engine itself is a single zero-dependency file: copy the release directory anywhere and double-click `start.bat`, or run `bin\gh_upx.exe` directly. The repository ships **no ZIP packaging script** — `installer.iss`, the launcher scripts and `go build` are the supported paths. As of v0.3.0 the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest) also publishes a ZIP of the release directory built from the same tree (e.g. `General-Harness-CLI-v0.3.3.zip`); a ZIP you build yourself is not bound to that file name. To run without the installer:
+The engine itself is a single zero-dependency file: copy the release directory anywhere and double-click `start.bat`, or run `bin\gh_upx.exe` directly. The repository ships **no ZIP packaging script** — `installer.iss`, the launcher scripts and `go build` are the supported paths. As of v0.3.0 the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest) also publishes a ZIP of the release directory built from the same tree (e.g. `General-Harness-CLI-v0.3.4.zip`); a ZIP you build yourself is not bound to that file name. To run without the installer:
 
 ```bash
 cd engine
@@ -151,7 +151,7 @@ curl http://127.0.0.1:8000/health
 
 # 3) Identify the service and its version
 curl http://127.0.0.1:8000/
-# → {"service":"General Harness","version":"0.3.3"}
+# → {"service":"General Harness","version":"0.3.4"}
 
 # 4) List models (includes the bundled local GGUF sample)
 curl http://127.0.0.1:8000/v1/models
@@ -204,6 +204,7 @@ The prompt shows the current model and the web-search switch. `reasoning_content
 | `/usage [1d\|7d\|30d\|all]` | Usage over time as a block bar chart (only buckets with traffic are shown) |
 | `/usage conv` | Recent conversations |
 | `/config` | Show the effective configuration and the file paths in use |
+| `/regen` | Regenerate the last answer: drop it and everything after it, resend the same question (new in v0.3.4-cli) |
 | `/history` | Message count in the current session |
 | `/clear` | Clear the current conversation history |
 | `/help` | Show command help |
@@ -554,7 +555,7 @@ Groups by session (ordered by last activity, newest first) and sums the tokens o
 
 ### Root Endpoint
 
-`GET /` → `{"service":"General Harness","version":"0.3.3"}` (not rate-limited)
+`GET /` → `{"service":"General Harness","version":"0.3.4"}` (not rate-limited)
 
 The root response carries only the service name and the engine version — there is no web UI entry point, because this branch ships no web interface at all.
 
@@ -769,7 +770,7 @@ The engine source has zero third-party dependencies (pure standard library): a h
 cd engine && go test ./... -count=1
 ```
 
-Measured state (v0.3.3-cli): `go test ./... -count=1` → `ok gh-engine 9.434s`, **PASS 99 / FAIL 0 / SKIP 0**. Distribution: 33 pre-existing tests (`engine_test.go` 9, `integration_test.go` 10, `agent_test.go` 8, `ollama_test.go` 2, `cloud_test.go` 2, `streaming_test.go` 2) + 36 added in v0.3.0 (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, plus 2 new keep-alive regression cases in `cloud_test.go`) + 8 added in v0.3.1/v0.3.2 (`keys_test.go`: override walk-through, YAML quoting, masking, `/v1/keys` write + hot reload, argument validation, non-loopback rejection, base/override merge, `keys.yaml` change detection) + 22 added in v0.3.3 (`cli_test.go`: command parsing, model switching, thinking fold and expand, Ctrl+C interrupt, usage table and conversation list, key set and clear, backend readiness validation, pipe mode, failed requests not recorded in history). The Python suite left with the GUI — Go is the only test surface here.
+Measured state (v0.3.4-cli): `go test ./... -count=1` → `ok gh-engine`, **PASS 102 / FAIL 0 / SKIP 0**. Distribution: 33 pre-existing tests (`engine_test.go` 9, `integration_test.go` 10, `agent_test.go` 8, `ollama_test.go` 2, `cloud_test.go` 2, `streaming_test.go` 2) + 36 added in v0.3.0 (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, plus 2 new keep-alive regression cases in `cloud_test.go`) + 8 added in v0.3.1/v0.3.2 (`keys_test.go`: override walk-through, YAML quoting, masking, `/v1/keys` write + hot reload, argument validation, non-loopback rejection, base/override merge, `keys.yaml` change detection) + 22 added in v0.3.3 (`cli_test.go`: command parsing, model switching, thinking fold and expand, Ctrl+C interrupt, usage table and conversation list, key set and clear, backend readiness validation, pipe mode, failed requests not recorded in history). The Python suite left with the GUI — Go is the only test surface here.
 
 What is actually covered: YAML parsing, GGUF parsing (including invalid magic), usage stats (time series / conversation aggregation / custom range / persistence), key parsing and multi-key selection, provider registration, model routing, rate limiting (including 429), auth, the Ollama endpoints, streaming & non-streaming accounting, SSE parsing, the hand-written chunked reader plus keep-alive + `Content-Length` framing (with regression tests that fail if the fix is removed), the root endpoint reporting service and version, agent allow-list/block-list/timeout/truncation, search config parsing and keywords, URL normalization and de-duplication, cache and fetch-content behavior, search error mapping, `search.backends` readiness, injected-context building, chat `web_search` (unchanged when absent, context+sources, explicit query, rewrite mode, streaming phase frame, graceful degradation, 403 when disabled), HTML extraction, entity decoding, SSRF rejection, redirect handling and truncation, and the CLI command surface (parsing, model switching, thinking fold, interrupt handling, usage rendering, key management, pipe mode).
 

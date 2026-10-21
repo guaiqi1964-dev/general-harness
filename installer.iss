@@ -3,8 +3,8 @@
 ; 本分支不含 GUI（无 pywebview、无 /ui 页面、无 gui/ 目录），安装后即用终端。
 
 #define MyAppName "General Harness (CLI)"
-#define MyAppVersion "0.3.3"
-#define MyAppFileVersion "0.3.3.0"
+#define MyAppVersion "0.3.4"
+#define MyAppFileVersion "0.3.4.0"
 #define MyAppPublisher "GQ's Lab"
 #define MyAppExeName "start.bat"
 #define MyAppId "{{8F3B1A2C-5D4E-4A6B-9C7D-1E2F3A4B5C6D}"
@@ -46,7 +46,8 @@ Name: "desktopicon"; Description: "Create desktop shortcut"; GroupDescription: "
 
 [Files]
 ; 只发布 UPX 压缩版：未压缩的 gh.exe 有 6.4 MB，对纯 CLI 发行版没有价值。
-Source: "bin\gh_upx.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+; 只带未压缩的 gh.exe：UPX 压缩版会被 Windows Defender 误判为 Trojan:Win32/Wacatac.B!ml
+Source: "bin\gh.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "config.yaml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "restart.bat"; DestDir: "{app}"; Flags: ignoreversion

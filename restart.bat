@@ -2,9 +2,9 @@
 setlocal enabledelayedexpansion
 title General Harness - Restart
 cd /d "%~dp0"
-set "ENGINE=%~dp0bin\gh_upx.exe"
+set "ENGINE=%~dp0bin\gh.exe"
 set PORT=8000
-if not exist "%ENGINE%" set "ENGINE=%~dp0bin\gh.exe"
+if not exist "%ENGINE%" set "ENGINE=%~dp0bin\gh_upx.exe"
 
 rem ---- Parse mode arg: default cli; optional server ----
 set MODE=cli
@@ -45,7 +45,7 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% .*LISTENING"') do (
 ping -n 2 127.0.0.1 >nul
 
 if not exist "%ENGINE%" (
-    echo [ERROR] Engine binary not found: bin\gh_upx.exe / bin\gh.exe
+    echo [ERROR] Engine binary not found: bin\gh.exe
     pause & exit /b 1
 )
 echo [START] Starting engine...
