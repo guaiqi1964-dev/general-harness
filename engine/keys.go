@@ -246,3 +246,97 @@ func (e *Engine) handleKeys(req *httpRequest, w *responseWriter) {
 		}})
 	}
 }
+
+// handleKeyDiscovery 用一把 Key 探测「这是哪家厂商」并拉回该 Key 真实可用的模型。
+//
+// 两种用法：
+//   - {"key":"sk-..."}：拿这把 Key 挨家打 /models，第一个 200 的就是答案（自动识别厂商）。
+//   - {"provider":"deepseek"}：只用已保存的 Key 刷新这一家的模型列表。
+//
+// 只发 GET /models，不产生推理计费。结果写入 models_cache.json 并立即并入注册表，
+// 因此 /v1/models 与 /model 立刻就能看到新模型，不必重启引擎。
+func (e *Engine) handleKeyDiscovery(req *httpRequest, w *responseWriter) {
+	if !isLoopbackAddr(clientIP(req)) {
+		w.JSON(403, map[string]any{"error": map[string]any{
+			"message": "Key 管理接口只允许本机访问", "type": "permission_error", "code": 403,
+		}})
+		return
+	}
+	if req.Method != "POST" {
+		w.JSON(405, map[string]any{"error": map[string]any{
+			"message": "Method Not Allowed", "type": "method_not_allowed", "code": 405,
+		}})
+		return
+	}
+	var body struct {
+		Provider string `json:"provider"`
+		Key      string `json:"key"`
+	}
+	if err := jsonBody(req, &body); err != nil {
+		w.JSON(400, map[string]any{"error": map[string]any{
+			"message": "请求体解析失败", "type": "invalid_request_error", "code": 400,
+		}})
+		return
+	}
+	e.refreshKeysIfChanged()
+
+	provider := strings.TrimSpace(body.Provider)
+	key := strings.TrimSpace(body.Key)
+
+	var targets []probeTarget
+	if provider != "" {
+		p, ok := e.Cloud.Providers[provider]
+		if !ok {
+			w.JSON(404, map[string]any{"error": map[string]any{
+				"message": "未知的厂商: " + provider, "type": "not_found", "code": 404,
+			}})
+			return
+		}
+		if key == "" {
+			key = p.defaultKey().Key
+		}
+		targets = []probeTarget{{Name: p.Name, BaseURL: p.BaseURL}}
+	} else {
+		targets = providerTargets(e.Cloud)
+	}
+	if key == "" {
+		w.JSON(400, map[string]any{"error": map[string]any{
+			"message": "没有可用的 Key：请在请求里带上 key，或先保存该厂商的 Key",
+			"type":    "invalid_request_error", "code": 400,
+		}})
+		return
+	}
+
+	result := discoverByKey(key, targets)
+	if result.Provider == "" {
+		w.JSON(404, map[string]any{"error": map[string]any{
+			"message": "没有任何厂商接受这把 Key（详见 attempts）",
+			"type":    "not_found", "code": 404,
+			"attempts": result.Attempts,
+		}})
+		return
+	}
+
+	// 并入缓存与注册表：重启后依然保留，本进程内立即可用。
+	root := filepath.Dir(e.KeysPath)
+	if e.Models == nil {
+		e.Models = loadModelsCache(root)
+	}
+	e.Models.put(result.Provider, result.BaseURL, result.Models)
+	if err := e.Models.save(root); err != nil {
+		fmt.Fprintln(os.Stderr, "写入 models_cache.json 失败:", err)
+	}
+	added := e.Models.applyTo(e.Cloud)
+	if added > 0 {
+		fmt.Fprintf(os.Stderr, "模型发现：%s 新增 %d 个模型\n", result.Provider, added)
+	}
+
+	w.JSON(200, map[string]any{
+		"provider":   result.Provider,
+		"base_url":   result.BaseURL,
+		"models":     result.Models,
+		"elapsed_ms": result.ElapsedMS,
+		"attempts":   result.Attempts,
+		"added":      added,
+	})
+}

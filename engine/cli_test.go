@@ -253,6 +253,32 @@ func TestCLIKeyListAndClear(t *testing.T) {
 	}
 }
 
+// /key list 与 /key help 是列清单的别名，不能被当成密钥去联网探测。
+func TestCLIKeyListAlias(t *testing.T) {
+	for _, alias := range []string{"list", "help"} {
+		s, buf := newTestCLI(t)
+		if _, quit := s.handleCommand("/key " + alias); quit {
+			t.Fatalf("/key %s 不应退出", alias)
+		}
+		if !strings.Contains(buf.String(), "Key") {
+			t.Errorf("/key %s 输出 = %q", alias, buf.String())
+		}
+	}
+}
+
+// 单参数不是密钥时只提示用法，不应发起网络探测。
+func TestCLIKeySingleArgTooShort(t *testing.T) {
+	s, buf := newTestCLI(t)
+	s.cmdKey("short")
+	out := buf.String()
+	if !strings.Contains(out, "不像一把密钥") && !strings.Contains(out, "用法") {
+		t.Fatalf("过短的单参数应提示用法：%q", out)
+	}
+	if strings.Contains(out, "正在探测") {
+		t.Errorf("过短的输入不该触发探测：%q", out)
+	}
+}
+
 func TestCLIKeyListMarksPlaceholder(t *testing.T) {
 	s, buf := newTestCLI(t)
 	p := s.engine.Cloud.Providers["fake"]

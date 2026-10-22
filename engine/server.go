@@ -25,6 +25,10 @@ type Engine struct {
 	Agent  *AgentExecutor
 	Search *searchService
 
+	// models_cache.json：用 Key 探测到的模型清单，启动时并入注册表，
+	// 让厂商新上线的模型不必发版就能出现在 /v1/models 里。
+	Models *modelsCache
+
 	// keys.yaml 覆盖层（GUI / CLI 写入的 Key），变更后热加载，不必重启引擎。
 	KeysPath string
 	keysMod  time.Time
@@ -38,6 +42,7 @@ func newEngine(cfg *GlobalConfig, root string) *Engine {
 	gguf.scan()
 	usage := newUsageStore(filepath.Join(root, "usage_stats.json"))
 	keysPath := keysFilePath(root)
+	modelCache := loadModelsCache(root)
 	engine := &Engine{
 		Config:   cfg,
 		Cloud:    cloud,
@@ -46,10 +51,14 @@ func newEngine(cfg *GlobalConfig, root string) *Engine {
 		Rate:     newRateLimiter(),
 		Agent:    newAgentExecutor(cfg.Agent),
 		Search:   newSearchService(cfg.Search),
+		Models:   modelCache,
 		KeysPath: keysPath,
 		baseKeys: baseKeys(cloud),
 	}
 	applyKeyOverrides(cloud, engine.baseKeys, loadKeyOverrides(root))
+	if added := modelCache.applyTo(cloud); added > 0 {
+		fmt.Fprintf(os.Stderr, "模型缓存：并入 %d 个探测到的模型\n", added)
+	}
 	if st, err := os.Stat(keysPath); err == nil {
 		engine.keysMod = st.ModTime()
 		engine.keysSize = st.Size()
@@ -150,6 +159,9 @@ func (e *Engine) dispatch(req *httpRequest, w *responseWriter) {
 	case path == "/v1/keys":
 		// 本机 Key 管理：给 GUI / CLI 提供“填 Key 就能用”的入口。
 		e.handleKeys(req, w)
+	case path == "/v1/keys/discover":
+		// 用 Key 探测厂商并拉取该 Key 真实可用的模型列表。
+		e.handleKeyDiscovery(req, w)
 	case path == "/v1/chat/completions":
 		e.handleChatCompletions(req, w)
 	case path == "/v1/usage/stats":
@@ -184,9 +196,9 @@ func (e *Engine) corsHeaders() map[string]string {
 		origin = "*"
 	}
 	return map[string]string{
-		"Access-Control-Allow-Origin":      origin,
-		"Access-Control-Allow-Methods":     "GET, POST, OPTIONS",
-		"Access-Control-Allow-Headers":     "Authorization, Content-Type, X-Gateway-Api-Key",
+		"Access-Control-Allow-Origin":  origin,
+		"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+		"Access-Control-Allow-Headers": "Authorization, Content-Type, X-Gateway-Api-Key",
 	}
 }
 
@@ -465,6 +477,7 @@ func (e *Engine) handleAgentRun(req *httpRequest, w *responseWriter) {
 	}
 	w.JSON(200, res)
 }
+
 // handleAgentLoop 编排多步 Agent 循环：模型决策 → 执行命令 → 回传结果 → 继续。
 func (e *Engine) handleAgentLoop(req *httpRequest, w *responseWriter) {
 	if req.Method != "POST" {

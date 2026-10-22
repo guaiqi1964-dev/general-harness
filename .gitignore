@@ -6,3 +6,5 @@ usage_stats.json
 gh-engine.exe
 release_assets/
 keys.yaml
+# 发行件只用未压缩引擎（UPX 版会被部分杀软误判）
+gh_upx.exe

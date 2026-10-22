@@ -543,8 +543,17 @@ func (s *cliSession) cmdKey(arg string) {
 		s.listKeys()
 		return
 	}
+	if len(parts) == 1 {
+		if parts[0] == "list" || parts[0] == "help" {
+			s.listKeys()
+			return
+		}
+		// 只给一把 Key：自动判断它是哪家的，并拉回该 Key 可用的模型。
+		s.discoverKey(parts[0])
+		return
+	}
 	if len(parts) != 2 {
-		s.fail("用法: /key <厂商> <密钥|-清除>")
+		s.fail("用法: /key <厂商> <密钥|-清除>，或 /key <密钥> 自动识别厂商")
 		return
 	}
 	provider, key := parts[0], parts[1]
@@ -577,6 +586,56 @@ func (s *cliSession) cmdKey(arg string) {
 	s.engine.keysMod = time.Time{}
 	s.engine.refreshKeysIfChanged()
 	s.ok("%s 的 Key 已保存（%s），立即生效", provider, maskKey(key))
+}
+
+// discoverKey 用一把 Key 自动判断厂商，并把该 Key 真实可用的模型拉回本地。
+//
+// 与 GUI「识别并保存」和 POST /v1/keys/discover 走同一条路径：
+// 探测 → 写 keys.yaml → 写 models_cache.json → 并入注册表，因此不必重启。
+func (s *cliSession) discoverKey(key string) {
+	if len(key) < 8 {
+		s.fail("这不像一把密钥。用法: /key <厂商> <密钥>，或 /key <密钥> 自动识别")
+		return
+	}
+	s.dim("正在探测这把 Key 属于哪家厂商…")
+	result := discoverByKey(key, providerTargets(s.engine.Cloud))
+	if result.Provider == "" {
+		s.fail("没有任何厂商接受这把 Key")
+		for _, a := range result.Attempts {
+			if a.Error != "" {
+				s.dim("  %s: %s", a.Provider, a.Error)
+			} else if a.Status != 0 {
+				s.dim("  %s: HTTP %d", a.Provider, a.Status)
+			}
+		}
+		return
+	}
+	root := filepath.Dir(s.engine.KeysPath)
+	overrides := loadKeyOverrides(root)
+	overrides[result.Provider] = key
+	if err := writeKeyOverrides(root, overrides); err != nil {
+		s.fail("写入 keys.yaml 失败: %s", err.Error())
+		return
+	}
+	s.engine.keysMod = time.Time{}
+	s.engine.refreshKeysIfChanged()
+	if s.engine.Models == nil {
+		s.engine.Models = loadModelsCache(root)
+	}
+	s.engine.Models.put(result.Provider, result.BaseURL, result.Models)
+	if err := s.engine.Models.save(root); err != nil {
+		s.dim("写入 models_cache.json 失败: %s", err.Error())
+	}
+	added := s.engine.Models.applyTo(s.engine.Cloud)
+	s.ok("识别为 %s，可用 %d 个模型（新增 %d），Key 已保存（%s）",
+		result.Provider, len(result.Models), added, maskKey(key))
+	ids := make([]string, 0, len(result.Models))
+	for _, m := range result.Models {
+		ids = append(ids, m.ID)
+	}
+	if len(ids) > 0 {
+		s.dim("  %s", strings.Join(ids, ", "))
+	}
 }
 
 func (s *cliSession) listKeys() {

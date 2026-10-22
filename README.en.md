@@ -11,7 +11,7 @@
 - **Engine**: `bin/gh.exe` (6,482,432 bytes ≈ 6.18 MB) — single file, zero third-party dependencies, ready to run after extraction. Since v0.3.5 the release no longer ships a UPX-compressed build: Windows Defender flags it as `Trojan:Win32/Wacatac.B!ml` and quarantines it on extraction.
 - **Engine source**: `engine/` — pure Go standard library (including a hand-written HTTP layer), no external modules
 - **GUI**: `gui/gui.py` — uses pywebview to call the native Edge WebView2; the engine also serves an equivalent built-in page at `GET /ui` (v0.3.1, key panel added in v0.3.2), which `start.bat` opens automatically when Python or pywebview is missing
-- **Version**: `0.3.5` (new in this release: copy any question or answer, delete a single turn, and regenerate an answer — see [Fixed in v0.3.5](#fixed-in-v035); earlier fixes: [v0.3.4](#fixed-in-v034) / [v0.3.3](#fixed-in-v033) / [v0.3.2](#fixed-in-v032) / [v0.3.1](#fixed-in-v031))
+- **Version**: `0.3.6` (new in this release: the model list is no longer hand-written — paste any provider key and the engine identifies the provider and pulls back the models that key can actually use — see [Fixed in v0.3.6](#fixed-in-v036); earlier fixes: [v0.3.5](#fixed-in-v035) / [v0.3.4](#fixed-in-v034) / [v0.3.3](#fixed-in-v033) / [v0.3.2](#fixed-in-v032) / [v0.3.1](#fixed-in-v031))
 
 ---
 
@@ -47,6 +47,7 @@
 - [Running Tests](#running-tests)
 - [Size Design Notes](#size-design-notes)
 - [API Keys & Credentials](#api-keys--credentials)
+- [Fixed in v0.3.6](#fixed-in-v036)
 - [Fixed in v0.3.5](#fixed-in-v035)
 - [Fixed in v0.3.4](#fixed-in-v034)
 - [Fixed in v0.3.3](#fixed-in-v033)
@@ -79,7 +80,7 @@
 
 ### Option 1: Windows Installer
 
-Download `General-Harness-Setup-0.3.5.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
+Download `General-Harness-Setup-0.3.6.exe` from the [Releases page](https://github.com/guaiqi1964-dev/general-harness/releases/latest), double-click and follow the wizard:
 
 - `DefaultDirName={autopf}\General Harness` combined with `PrivilegesRequired=lowest` means the default install target is **the current user's program directory**, not a machine-wide one;
 - The installer bundles everything needed (engine binary, config, GUI, sample models);
@@ -146,7 +147,7 @@ curl http://127.0.0.1:8000/health
 
 # 3) Identify the service and its version
 curl http://127.0.0.1:8000/
-# → {"service":"General Harness","ui":"/ui","version":"0.3.5"}
+# → {"service":"General Harness","ui":"/ui","version":"0.3.6"}
 
 # 4) List models (includes the bundled local GGUF sample)
 curl http://127.0.0.1:8000/v1/models
@@ -492,6 +493,12 @@ Behavior:
 
 ### Model List /v1/models
 
+> **Where the model list comes from**: `config.yaml` and `plugins/<provider>/config.yaml` hold the
+> *seeded* models. Since v0.3.6, pasting a key asks the provider which models it serves **right now** —
+> the engine probes each provider's `GET /models`, the first 200 wins, and the result is written to
+> `models_cache.json` and merged into the registry. Changing providers or a provider shipping new models
+> needs no config edit and no release. See [Fixed in v0.3.6](#fixed-in-v036).
+
 `GET /v1/models` → `{"object":"list","data":[{id, object, owned_by, api_keys, vision}]}`
 
 - Cloud model format: `provider/model` (e.g. `deepseek/deepseek-chat`);
@@ -568,7 +575,7 @@ Groups by session (ordered by last activity, newest first) and sums the tokens o
 
 ### Root Endpoint
 
-`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.5"}` (not rate-limited)
+`GET /` → `{"service":"General Harness","ui":"/ui","version":"0.3.6"}` (not rate-limited)
 
 `GET /ui` → the built-in browser UI (HTML, 13,307 bytes embedded via `go:embed`; not rate-limited).
 It matches the desktop GUI feature-for-feature and needs no Python.
@@ -790,14 +797,14 @@ The engine source has zero third-party dependencies (pure standard library): a h
 ## Running Tests
 
 ```bash
-# Go engine tests (unit + HTTP integration, 101 test functions)
+# Go engine tests (unit + HTTP integration, 115 test functions)
 cd engine && go test ./... -count=1
 
 # Python component tests (GUI proxy, frontend page, launcher logic)
 python -m unittest discover -s tests
 ```
 
-Measured state of the suite: **101 Go test functions, all green, none skipped** (`go test ./... -count=1` → `ok gh-engine`) — the 33 pre-existing engine / integration / agent tests plus 38 new tests covering web search, HTML extraction, SSRF, chat integration, the built-in `/ui`, and the keep-alive/Content-Length fix (`htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, `ui_test.go` 2, plus 2 new cases in `cloud_test.go`), plus 8 more for key management (`keys_test.go` 6: override round-trip, YAML quoting, masking, `/v1/keys` write + hot reload, validation, loopback-only; and 2 assertions added to `ui_test.go`). **7 Python tests, all green** (`Ran 7 tests … OK`).
+Measured state of the suite: **115 Go test functions, all green, none skipped** (`go test ./... -count=1` → `ok gh-engine`), split as `engine_test.go` 10, `integration_test.go` 10, `agent_test.go` 8, `ollama_test.go` 2, `streaming_test.go` 2, `htmltext_test.go` 12, `search_test.go` 11, `search_chat_test.go` 8, `search_api_test.go` 3, `cloud_test.go` 4 (including 2 keep-alive regressions), `keys_test.go` 8, `discover_test.go` 9, `ui_test.go` 2 and `cli_test.go` 25 (command parsing, model switching, thinking fold/expand, Ctrl+C, usage panel, key management and auto-detection, backend readiness, pipe mode, failures kept out of history). **7 Python tests, all green** (`Ran 7 tests … OK`).
 
 What is actually covered: YAML parsing, GGUF parsing (including invalid magic), usage stats (time series / conversation aggregation / custom range / persistence), key parsing and multi-key selection, provider registration, model routing, rate limiting (including 429), auth, the Ollama endpoints, streaming & non-streaming accounting, SSE parsing, the hand-written chunked reader plus keep-alive + `Content-Length` framing (with regression tests that fail if the fix is removed), the root endpoint reporting service/version/ui, agent allow-list/block-list/timeout/truncation, search config parsing and keywords, URL normalization and de-duplication, cache and fetch-content behavior, search error mapping, `search.backends` readiness, injected-context building, chat `web_search` (unchanged when absent, context+sources, explicit query, rewrite mode, streaming phase frame, graceful degradation, 403 when disabled), HTML extraction, entity decoding, SSRF rejection, redirect handling and truncation, GUI proxy forwarding, and single-file frontend integrity.
 
@@ -821,6 +828,14 @@ Design approach: hand-written HTTP layer using only the `net` package (avoiding 
 Before v0.3.1 the only ways to configure a provider key were editing `plugins/<provider>/config.yaml` or setting
 an environment variable (`key: ${DEEPSEEK_API_KEY}`), followed by an engine restart. There are now three
 equivalent channels - **all of them write `keys.yaml` and take effect immediately (hot reload, no restart)**.
+
+### Auto-detect the provider
+
+Not sure which provider a key belongs to? Paste it into the **auto-detect** row of the 🔑 panel and
+click *Detect and save*: the engine probes every known provider's `/models` with that key, the first
+200 identifies the owner, and the models it can use are written to `models_cache.json` and merged into
+the registry — the model dropdown refreshes without a restart. The CLI equivalent is `/key <token>`
+(a single argument).
 
 ### 1. GUI: the 🔑 Keys panel
 
@@ -869,6 +884,21 @@ An unknown `provider` returns 404; empty `provider`/`key` returns 400.
 > `keys.yaml` stores keys in **plaintext** (same as `plugins/*/config.yaml`). It is more convenient than environment variables but should not be shared; use `${ENV_VAR}` when you need stronger separation.
 
 ---
+
+## Fixed in v0.3.6
+
+> Why: the model list lived in `config.yaml` and `plugins/<provider>/config.yaml`. Changing a key, adding a
+> provider, or a provider shipping a new model all meant editing config by hand — while every OpenAI-compatible
+> endpoint can already answer "which models do I serve right now".
+
+| Problem | Fix |
+| --- | --- |
+| Model list hard-coded in configuration | Paste a key and the engine identifies the provider and pulls the models that key can use: `POST /v1/keys/discover` |
+| You don't know which provider a key belongs to | All known providers' `GET /models` are probed concurrently; the first 200 wins. On total failure every per-provider `attempts` entry is returned for debugging |
+| Waiting for a release to see new models | Results are written to `models_cache.json` and merged into the registry immediately, so `/v1/models` and `/model` show them at once — no config edit, no restart |
+| The page required picking a provider before saving a key | The 🔑 panel gained an "auto-detect" row: paste key → identify → save → the model dropdown refreshes |
+| The CLI could only take an explicit provider | `/key <token>` (single argument) auto-detects and saves; `/key list` shows the state |
+| A new key still saw the old models | Probing only issues `GET /models` (no inference billing); discovered models are merged per provider and hand-written entries are never removed |
 
 ## Fixed in v0.3.5
 

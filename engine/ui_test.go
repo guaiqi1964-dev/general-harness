@@ -122,6 +122,19 @@ func TestBuiltinUIPage(t *testing.T) {
 	if strings.Contains(body, "history.concat") {
 		t.Fatal("内置页面仍在用 history.concat，删除与重新生成会导致上下文与界面不一致")
 	}
+	// v0.3.6：粘一个 Key 就能自动判断厂商并拉回可用模型，不能要求用户先选厂商。
+	for _, want := range []string{
+		`id="autoKey"`,
+		`id="autoBtn"`,
+		`id="keysAutoStatus"`,
+		"function autoDetect",
+		"function discoverModels",
+		"/v1/keys/discover",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("内置页面缺少模型自动发现要素 %q", want)
+		}
+	}
 
 	// 非 GET 方法应拒绝。
 	if st, _, _ := httpRaw(t, addr, "POST", "/ui"); st != 405 {

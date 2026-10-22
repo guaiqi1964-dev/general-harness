@@ -8,7 +8,7 @@
 > 界面）两种交互模式。核心引擎与界面完全解耦：只启动后端时使用
 > CLI，前后端一起运行时使用 GUI。
 
-- **版本**：v0.3.5（相对 v0.3.4 补齐对话操作——可复制提问与回答、可删除某一轮、可重新生成，见 [v0.3.5 修复](#v035-修复)；历次修复见 [v0.3.4](#v034-修复) / [v0.3.3](#v033-修复) / [v0.3.2](#v032-修复) / [v0.3.1](#v031-修复)；联网检索见 [联网搜索](#联网搜索)
+- **版本**：v0.3.6（相对 v0.3.5 让模型列表不再靠手写配置——粘一把 Key 就能自动识别厂商并拉回它当前真实可用的模型，见 [v0.3.6 修复](#v036-修复)；历次修复见 [v0.3.5](#v035-修复) / [v0.3.4](#v034-修复) / [v0.3.3](#v033-修复) / [v0.3.2](#v032-修复) / [v0.3.1](#v031-修复)；联网检索见 [联网搜索](#联网搜索)）
 - **引擎**：`bin/gh.exe`（实测 6,482,432 字节 ≈ 6.18 MB）——单文件、零第三方依赖、解压即用。v0.3.5 起发行件不再附带 UPX 压缩版：它会被 Windows Defender 误判为 `Trojan:Win32/Wacatac.B!ml` 并在解压时直接隔离，宁可多 4 MB 也不能让用户打不开
 - **引擎源码**：`engine/`——纯 Go 标准库实现（含手写 HTTP 层），无任何外部模块
 - **GUI**：`gui/gui.py`——基于 pywebview 调用系统原生 Edge WebView2，不可用时自动回退系统浏览器
@@ -43,6 +43,7 @@
   - [前端用法](#前端用法)
   - [缓存与并发](#缓存与并发)
 - [密钥与凭据管理](#密钥与凭据管理)
+- [v0.3.6 修复](#v036-修复)
 - [v0.3.5 修复](#v035-修复)
 - [v0.3.4 修复](#v034-修复)
 - [v0.3.3 修复](#v033-修复)
@@ -85,7 +86,7 @@
 
 ### 方式一：Windows 安装包
 
-从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-Setup-0.3.5.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
+从 [Releases 页面](https://github.com/guaiqi1964-dev/general-harness/releases/latest) 下载 `General-Harness-Setup-0.3.6.exe`（由 `installer.iss` 用 Inno Setup 6 编译产出），双击按向导操作：
 
 - 可自选安装目录：脚本中为 `DefaultDirName={autopf}\General Harness`，同时 `PrivilegesRequired=lowest`，因此**无需管理员权限**，实际安装到当前用户的程序目录（约 `%LocalAppData%\Programs\General Harness`），而非全局 `%ProgramFiles%`；
 - 安装包内置引擎二进制、`config.yaml`、启动脚本、GUI、示例 GGUF 与四个厂商插件配置；
@@ -339,6 +340,11 @@ data: [DONE]
 
 ### 模型列表 /v1/models
 
+> **模型清单从哪来**：`config.yaml` 与 `plugins/<厂商>/config.yaml` 里写的是「预置模型」；
+> 自 v0.3.6 起，粘一把 Key 就能问出该厂商**此刻真实提供**哪些模型——引擎并发探测各家的
+> `GET /models`，第一个返回 200 的即为归属，结果写入 `models_cache.json` 并立即并入注册表，
+> 所以换厂商、厂商上新都不必改配置或发版。详见 [v0.3.6 修复](#v036-修复)。
+
 `GET /v1/models` → `{"object":"list","data":[{id, object, owned_by, api_keys, vision}]}`
 
 - 云端模型格式：`厂商/模型`（如 `deepseek/deepseek-chat`）；
@@ -412,7 +418,7 @@ data: [DONE]
 | 端点 | 响应 | 说明 |
 | --- | --- | --- |
 | `GET /health` | `{"status":"ok"}` | 不受限流与鉴权影响 |
-| `GET /` | `{"service":"General Harness","ui":"/ui","version":"0.3.5"}` | 服务标识、版本号与内置界面入口，不限流 |
+| `GET /` | `{"service":"General Harness","ui":"/ui","version":"0.3.6"}` | 服务标识、版本号与内置界面入口，不限流 |
 | `GET /ui` | 内置浏览器界面（HTML） | v0.3.1 新增；与桌面 GUI 功能等价（含 v0.3.2 补上的 🔑 密钥面板），无需 Python；同样不限流 |
 
 > v0.2.4 的根路径会额外返回 `"docs":"/docs"`，但引擎**从未实现 `/docs` 路由**（访问实测 404），该误导字段已在 v0.3.0 移除。
@@ -694,6 +700,13 @@ search:
 v0.3.1 之前，配置厂商 Key 只能改 `plugins/<厂商>/config.yaml` 或设环境变量（`key: ${DEEPSEEK_API_KEY}`），改完还得重启引擎。
 现在有三条等效通道，**都写入 `keys.yaml`，保存即生效（热加载，无需重启）**。
 
+### 自动识别厂商
+
+不确定一把 Key 属于哪家？在 🔑 面板的「自动识别」一行粘贴它，点「识别并保存」：
+引擎会用这把 Key 并发探测所有已知厂商的 `/models`，第一个返回 200 的就是归属，
+同时把它此刻可用的模型写进 `models_cache.json` 并并入注册表——模型下拉立刻刷新，不用重启。
+CLI 里等价写法是 `/key <密钥>`（只给一个参数）。
+
 ### 1. GUI：🔑 密钥 面板
 
 点顶部工具栏的 **🔑 密钥**，面板列出全部已加载厂商及其状态：
@@ -741,6 +754,20 @@ curl -X POST http://127.0.0.1:8000/v1/keys \
 > `keys.yaml` 存的是**明文** Key（与 `plugins/*/config.yaml` 一致）。它比环境变量方便，但同样不要分享该文件；需要更强隔离时仍建议用 `${ENV_VAR}` 形式。
 
 ---
+
+## v0.3.6 修复
+
+> 起因：模型列表一直靠 `config.yaml` 和 `plugins/<厂商>/config.yaml` 手写。换一把 Key、换一家厂商、
+> 厂商上了新模型，都得人去改配置——而每家 OpenAI 兼容端点本来就能问出「我此刻提供哪些模型」。
+
+| 问题 | 修复 |
+| --- | --- |
+| 模型清单硬编码在配置里，新厂商/新模型只能手写 | 粘一把 Key 自动识别厂商并拉回它当前可用的模型：`POST /v1/keys/discover` |
+| 不知道一把 Key 属于哪家厂商 | 并发探测所有已知厂商的 `GET /models`，第一个 200 的即归属；全部失败时返回逐家 `attempts` 便于排障 |
+| 厂商上新模型要等发版 | 探测结果写入 `models_cache.json` 并立即并入注册表，`/v1/models` 与 `/model` 当场可见，无需改配置、无需重启 |
+| 页面里必须先选厂商才能存 Key | 🔑 面板新增「自动识别」一行：粘贴 Key → 识别 → 保存 → 模型下拉自动刷新 |
+| CLI 同样只能手选厂商 | `/key <密钥>`（单参数）自动识别并保存，`/key list` 看当前状态 |
+| 换了新 Key 却还在用旧模型 | 探测只发 `GET /models`，不产生推理计费；识别出的模型按厂商并入注册表，旧的手写模型不会被删 |
 
 ## v0.3.5 修复
 
@@ -1078,7 +1105,7 @@ upx --lzma -9 -o ../bin/gh.exe ../bin/gh.exe
 ## 运行测试
 
 ```bash
-# Go 引擎测试：101 个测试函数（单元 + HTTP 集成 + CLI），实测全绿
+# Go 引擎测试：115 个测试函数（单元 + HTTP 集成 + CLI），实测全绿
 cd engine && go test ./... -count=1
 
 # Python 组件测试：7 个测试（GUI 代理、前端页面、启动器逻辑），实测全绿
@@ -1086,7 +1113,7 @@ cd engine && go test ./... -count=1
 python -m unittest discover -s tests
 ```
 
-实测结果（v0.3.5）：`go test ./... -count=1` → `ok gh-engine`，101 个测试函数全部通过、无跳过；Python 侧 `Ran 7 tests ... OK`。分布为：既有测试 33 个（`engine_test.go` 9、`integration_test.go` 10、`agent_test.go` 8、`ollama_test.go` 2、`cloud_test.go` 2、`streaming_test.go` 2）+ v0.3.0 新增 36 个（`htmltext_test.go` 12、`search_test.go` 11、`search_chat_test.go` 8、`search_api_test.go` 3、`cloud_test.go` 新增 2 个 keep-alive 回归测试）+ v0.3.1/v0.3.2 新增 8 个（`ui_test.go` 2、`keys_test.go` 6：覆盖走查、YAML 引号、掩码、`/v1/keys` 写入与热加载、参数校验、非本机访问拒绝）+ v0.3.3 新增 22 个（`cli_test.go`：命令解析、模型切换、思考折叠与展开、Ctrl+C 中断、用量表格与会话列表、密钥设置与清除、后端就绪校验、管道模式、失败不入历史）。
+实测结果（v0.3.6）：`go test ./... -count=1` → `ok gh-engine`，115 个测试函数全部通过、无跳过；Python 侧 `Ran 7 tests ... OK`。分布为：`engine_test.go` 10、`integration_test.go` 10、`agent_test.go` 8、`ollama_test.go` 2、`streaming_test.go` 2、`htmltext_test.go` 12、`search_test.go` 11、`search_chat_test.go` 8、`search_api_test.go` 3、`cloud_test.go` 4（含 2 个 keep-alive 回归）、`keys_test.go` 8、`discover_test.go` 9、`ui_test.go` 2、`cli_test.go` 25（命令解析、模型切换、思考折叠与展开、Ctrl+C 中断、用量面板、密钥设置与自动识别、后端就绪校验、管道模式、失败不入历史）。
 
 测试覆盖：YAML 子集解析、GGUF 解析（含非法魔数）、用量统计（时间序列 / 对话聚合 / custom 区间 / 持久化）、Key 解析与多 Key 选择、厂商注册、模型路由、限流（含 429）、鉴权、Ollama 兼容端点、流式与非流式记账、SSE 解析、手写 HTTP 客户端的 chunked 解码与 keep-alive+Content-Length 收尾（含“去掉修复即失败”的回归测试）、Agent 白名单/黑名单/超时/输出截断、检索核心（关键词提取、后端调用、缓存、结果排序与 URL 规范化）、`/v1/search` 与 `/v1/search/backends` 状态码、对话侧 `web_search` 注入与失败降级、HTML 正文抽取与 SSRF 地址校验、以及 GUI 代理转发与前端单文件完整性。
 

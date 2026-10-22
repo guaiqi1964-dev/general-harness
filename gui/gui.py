@@ -125,6 +125,12 @@ a.src .host { color:var(--muted); font-size:12px; white-space:nowrap; }
 </div>
 <div id="keysPanel" hidden>
   <div class="usage-head"><span>🔑 厂商 API Key</span><button id="keysClose">✕</button></div>
+  <div class="keys-row" id="autoRow">
+  <span class="pname">自动识别</span>
+  <input id="autoKey" type="password" placeholder="粘贴任意厂商的 Key，自动判断属于哪家并拉取它当前可用的模型" autocomplete="off">
+  <button id="autoBtn">识别并保存</button>
+  </div>
+  <div id="keysAutoStatus" class="hint" style="margin:2px 0 8px"></div>
   <div id="keysList"><div class="hint">加载中…</div></div>
   <div id="keysTip">保存后立即生效（写入本机 keys.yaml，优先级高于 plugins 里的配置）。Key 以明文保存在本机，删除 keys.yaml 即回到插件配置。</div>
 </div>
@@ -141,6 +147,7 @@ const statusEl = $('#status'), sendBtn = $('#send');
 const deepBtn = $('#deep'), usageBtn = $('#usage'), usagePanel = $('#usagePanel'), usageBody = $('#usageBody'), usageRange = $('#usageRange'), usageChart = $('#usageChart'), gwkeyInput = $('#gwkey');
 const webBtn = $('#web');
 const keysBtn = $('#keys'), keysPanel = $('#keysPanel'), keysList = $('#keysList');
+const autoKey = $('#autoKey'), autoBtn = $('#autoBtn'), keysAutoStatus = $('#keysAutoStatus');
 // 对话按「轮」保存：每轮 {id, q, a, think, sources, qEl, aEl}。
 // 发送给接口的 messages 由 buildHistory() 现场展开，删除/重新生成后上下文自动一致。
 let turns = [];
@@ -200,7 +207,8 @@ async function loadKeys() {
           if (!r2.ok) throw new Error(d2.error?.message || '保存失败');
           statusEl.textContent = row.dataset.p + ' 的 Key 已保存（' + d2.masked + '），立即生效';
           inp.value = '';
-          await loadKeys();
+          
+          await loadModels();await loadKeys();
         } catch(e) { statusEl.textContent = '保存失败: ' + e.message; }
         finally { btn.disabled = false; }
       };
@@ -208,6 +216,44 @@ async function loadKeys() {
   } catch(e) {
     keysList.innerHTML = '<div class="hint">加载失败: ' + esc(e.message) + '</div>';
   }
+}
+async function discoverModels(key) {
+  keysAutoStatus.textContent = '正在探测厂商与可用模型…';
+  try {
+    const r = await fetch('/v1/keys/discover', {method:'POST', headers: authHeaders(),
+      body: JSON.stringify({key})});
+    const d = await r.json();
+    if (!r.ok) {
+      const why = ((d.error && d.error.attempts) || []).map(a => a.provider + '：' + (a.error || a.status)).join('；');
+      keysAutoStatus.textContent = '探测失败：' + ((d.error && d.error.message) || '未知错误') + (why ? '（' + why + '）' : '');
+      return null;
+    }
+    const names = (d.models || []).map(m => m.id).join(', ');
+    keysAutoStatus.textContent = '识别为 ' + d.provider + '，可用 ' + (d.models || []).length + ' 个模型'
+      + (d.added ? '（新增 ' + d.added + ' 个）' : '') + '：' + names;
+    await loadKeys();
+    await loadModels();
+    return d;
+  } catch(e) { keysAutoStatus.textContent = '探测失败: ' + e.message; return null; }
+}
+async function autoDetect() {
+  const key = autoKey.value.trim();
+  if (!key) { keysAutoStatus.textContent = '请先粘贴 API Key'; return; }
+  autoBtn.disabled = true;
+  try {
+    const d = await discoverModels(key);
+    if (!d) return;
+    const r2 = await fetch('/v1/keys', {method:'POST', headers: authHeaders(),
+      body: JSON.stringify({provider: d.provider, key})});
+    const d2 = await r2.json();
+    if (!r2.ok) throw new Error((d2.error && d2.error.message) || '保存失败');
+    keysAutoStatus.textContent = '已识别为 ' + d.provider + ' 并保存（' + d2.masked + '），可用 '
+      + (d.models || []).length + ' 个模型';
+    autoKey.value = '';
+    await loadKeys();
+    await loadModels();
+  } catch(e) { keysAutoStatus.textContent = '保存失败: ' + e.message; }
+  finally { autoBtn.disabled = false; }
 }
 function toggleKeys() {
   const open = keysPanel.hidden;
@@ -457,6 +503,7 @@ $('#deep').onclick = toggleDeep;
 $('#web').onclick = toggleWeb;
 $('#usage').onclick = loadUsage;
 $('#keys').onclick = toggleKeys;
+$('#autoBtn').onclick = autoDetect;
 $('#keysClose').onclick = () => { keysPanel.hidden = true; keysBtn.classList.remove('active'); };
 $('#usageClose').onclick = () => { usagePanel.hidden = true; };
 $('#usageRange').onchange = loadChart;
